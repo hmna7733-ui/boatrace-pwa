@@ -1289,7 +1289,24 @@ document.getElementById('result-input').addEventListener('input', () => { autoCh
 
 function calcPayout() {
   const odds = normalizeOdds(document.getElementById('odds-input').value);
-  const unit = betMode === 'uniform' ? (parseInt(document.getElementById('unit-bet').value) || 100) : 100;
+  // 個別設定時: 結果入力があれば的中買い目の金額、なければ最初の買い目の金額
+  let unit;
+  if (betMode === 'individual') {
+    const resultStr = document.getElementById('result-input').value.trim();
+    const ticket = document.getElementById('ticket-type').value;
+    const combos = getActiveCombos();
+    const parts = resultStr ? parseResult(resultStr) : null;
+    const bets = getIndividualBets();
+    if (parts && comboHit(combos, parts, ticket)) {
+      unit = getHitAmount(bets, combos, parts, ticket, 100);
+    } else {
+      // 的中不明の場合は最初の買い目の金額を表示
+      const firstKey = Object.keys(bets)[0];
+      unit = firstKey ? (bets[firstKey] || 100) : 100;
+    }
+  } else {
+    unit = parseInt(document.getElementById('unit-bet').value) || 100;
+  }
   const total = betMode === 'uniform' ? (parseInt(document.getElementById('total-bet').value) || 0) : getIndividualTotal();
   const hint = document.getElementById('payout-hint');
   if (!odds) { document.getElementById('payout-input').value = ''; hint.classList.remove('visible'); return; }
@@ -1362,6 +1379,36 @@ function autoCheck() {
   inp.className = hit ? 'hit' : 'miss';
 }
 
+// 的中した買い目のキーを返す（個別金額取得用）
+function hitComboKey(combos, parts, ticket) {
+  if (!parts || !combos.length) return null;
+  const cols = TICKET_COLS[ticket] || 3;
+  let hitCombo = null;
+  if (ticket === '単勝') hitCombo = combos.find(c => c[0] === parts[0]);
+  else if (ticket === '2連単') hitCombo = combos.find(c => c[0]===parts[0] && c[1]===parts[1]);
+  else if (ticket === '2連複' || ticket === '拡連複') {
+    hitCombo = combos.find(c => {
+      const cs = [...c].sort((a,b)=>a-b); const ps = [...parts].sort((a,b)=>a-b);
+      return cs[0]===ps[0] && cs[1]===ps[1];
+    });
+  } else if (ticket === '3連複') {
+    hitCombo = combos.find(c => {
+      const cs = [...c].sort((a,b)=>a-b); const ps = [...parts].sort((a,b)=>a-b);
+      return cs[0]===ps[0] && cs[1]===ps[1] && cs[2]===ps[2];
+    });
+  } else {
+    hitCombo = combos.find(c => c[0]===parts[0] && c[1]===parts[1] && c[2]===parts[2]);
+  }
+  return hitCombo ? hitCombo.slice(0, cols).join('-') : null;
+}
+
+// 個別設定での的中金額を取得
+function getHitAmount(individualBets, combos, parts, ticket, defaultUnit) {
+  if (!individualBets) return defaultUnit;
+  const key = hitComboKey(combos, parts, ticket);
+  return key && individualBets[key] ? individualBets[key] : defaultUnit;
+}
+
 // 的中判定（舟券種別考慮）
 function comboHit(combos, parts, ticket) {
   if (!parts || !combos.length) return false;
@@ -1399,7 +1446,12 @@ function addEntry() {
     const ticket = document.getElementById('ticket-type').value;
     const hit = parts && comboHit(combos, parts, ticket);
     status = hit ? 'win' : 'lose';
-    payout = hit && odds ? Math.floor(Math.round(odds * unit * 10) / 10) : 0;
+    if (hit && odds) {
+      const hitUnit = betMode === 'individual'
+        ? getHitAmount(individualBets, combos, parts, ticket, 100)
+        : unit;
+      payout = Math.floor(Math.round(odds * hitUnit * 10) / 10);
+    }
   }
   const f = id => document.getElementById(id).value;
   const selBk = document.querySelector('#buykata-group .buykata-chip.sel');
@@ -1679,7 +1731,22 @@ document.getElementById('e-unit').addEventListener('input', updateSheetCombos);
 document.getElementById('e-odds').addEventListener('input', updateSheetPayout);
 function updateSheetPayout() {
   const odds = normalizeOdds(document.getElementById('e-odds').value);
-  const unit = parseInt(document.getElementById('e-unit').value) || 100;
+  let unit;
+  if (sheetBetMode === 'individual') {
+    const resultStr = document.getElementById('e-result').value.trim();
+    const ticket = document.getElementById('e-ticket').value;
+    const combos = getSheetCombos();
+    const parts = resultStr ? parseResult(resultStr) : null;
+    const bets = getSheetIndividualBets();
+    if (parts && comboHit(combos, parts, ticket)) {
+      unit = getHitAmount(bets, combos, parts, ticket, 100);
+    } else {
+      const firstKey = Object.keys(bets)[0];
+      unit = firstKey ? (bets[firstKey] || 100) : 100;
+    }
+  } else {
+    unit = parseInt(document.getElementById('e-unit').value) || 100;
+  }
   document.getElementById('e-payout').value = odds ? Math.floor(Math.round(odds * unit * 10) / 10) : '';
 }
 
@@ -1755,7 +1822,12 @@ function sheetSave() {
     const tk = document.getElementById('e-ticket').value;
     const hit = parts && comboHit(combos, parts, tk);
     status = hit ? 'win' : 'lose';
-    payout = hit && odds ? Math.floor(Math.round(odds * unit * 10) / 10) : 0;
+    if (hit && odds) {
+      const hitUnit = sheetBetMode === 'individual'
+        ? getHitAmount(individualBets, combos, parts, tk, 100)
+        : unit;
+      payout = Math.floor(Math.round(odds * hitUnit * 10) / 10);
+    }
   }
   const formation = getSheetSel('e-f1').join('') + '→' + getSheetSel('e-f2').join('') + '→' + getSheetSel('e-f3').join('');
   entries[editingIdx] = {

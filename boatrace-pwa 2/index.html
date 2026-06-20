@@ -1,0 +1,1979 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="競艇収支">
+<meta name="theme-color" content="#0F6E56">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>ボートレース収支管理</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script type="module">
+// Firebase setup - loaded as module
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getFirestore, doc, setDoc, onSnapshot, collection, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+// ── USER CONFIG ────────────────────────────────────────────
+// Firestoreを使うには下記にあなたのFirebase設定を入力してください
+// https://console.firebase.google.com/ で無料プロジェクトを作成できます
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAv35i4MSksru9csqLBbtZvHEJbWfaVQGs",
+  authDomain: "boat-d715f.firebaseapp.com",
+  projectId: "boat-d715f",
+  storageBucket: "boat-d715f.firebasestorage.app",
+  messagingSenderId: "143618120714",
+  appId: "1:143618120714:web:8fe8f3548ada361d5053f3",
+  measurementId: "G-JPB6Y4GNP0"
+};
+// ──────────────────────────────────────────────────────────
+
+window._firebaseReady = false;
+if (FIREBASE_CONFIG.apiKey) {
+  try {
+    const app = initializeApp(FIREBASE_CONFIG);
+    const db = getFirestore(app);
+    window._db = db;
+    window._firebaseReady = true;
+  } catch(e) {
+    console.warn('Firebase init failed:', e);
+  }
+}
+</script>
+<style>
+:root {
+  --green: #1D9E75;
+  --green-dark: #0F6E56;
+  --green-deep: #085041;
+  --red: #E24B4A;
+  --amber: #EF9F27;
+  --bg: #f4f6f4;
+  --surface: #ffffff;
+  --surface2: #f0f3f1;
+  --border: rgba(0,0,0,0.09);
+  --text: #1a1a1a;
+  --text2: #666;
+  --text3: #999;
+  --radius: 14px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1410;
+    --surface: #1a2118;
+    --surface2: #222d1f;
+    --border: rgba(255,255,255,0.09);
+    --text: #f0f4f0;
+    --text2: #8fa88a;
+    --text3: #546350;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  overscroll-behavior: none;
+}
+
+/* Layout shell */
+#app { display: flex; flex-direction: column; height: 100%; height: 100dvh; }
+
+/* Header */
+.header {
+  background: var(--green-dark);
+  padding: calc(var(--safe-top) + 12px) 16px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.header-title { color: #fff; font-size: 17px; font-weight: 600; letter-spacing: .02em; }
+.header-sub { color: rgba(255,255,255,.6); font-size: 11px; margin-top: 1px; }
+.header-badge {
+  background: rgba(255,255,255,.15); color: #fff;
+  font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 500;
+}
+
+/* Scroll area */
+.scroll-area {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 12px 14px calc(var(--safe-bottom) + 80px);
+}
+.scroll-area::-webkit-scrollbar { display: none; }
+
+/* Bottom nav */
+.bottom-nav {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: var(--surface);
+  border-top: 0.5px solid var(--border);
+  display: flex;
+  padding-bottom: var(--safe-bottom);
+  flex-shrink: 0;
+  z-index: 100;
+}
+.nav-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 8px 4px 6px; cursor: pointer; border: none; background: none;
+  color: var(--text3); font-size: 10px; gap: 3px; transition: color .15s;
+}
+.nav-item.active { color: var(--green); }
+.nav-icon { width: 24px; height: 24px; }
+
+/* Pages */
+.page { display: none; }
+.page.active { display: block; }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 12px 12px;
+  margin-bottom: 10px;
+  border: 0.5px solid var(--border);
+}
+.card-label {
+  font-size: 11px; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px;
+}
+
+/* Metric row */
+.metric-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.metric-row.four { grid-template-columns: repeat(4, 1fr); }
+.metric {
+  background: var(--surface2); border-radius: 10px; padding: 10px 12px;
+}
+.metric-label { font-size: 10px; color: var(--text3); margin-bottom: 3px; }
+.metric-val { font-size: 18px; font-weight: 700; line-height: 1; }
+.metric-val.pos { color: var(--green); }
+.metric-val.neg { color: var(--red); }
+.metric-val.neu { color: var(--text); }
+.metric-val.sm { font-size: 14px; }
+
+/* Form elements */
+.field { margin-bottom: 10px; }
+.field-label { font-size: 12px; color: var(--text2); margin-bottom: 5px; display: block; }
+select, input[type=text], input[type=number], textarea {
+  width: 100%; padding: 11px 13px; font-size: 15px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface2); color: var(--text);
+  -webkit-appearance: none; appearance: none;
+  font-family: inherit;
+}
+select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23999' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green); background: var(--surface); }
+input[readonly] { color: var(--text2); background: var(--surface2); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+textarea { resize: none; height: 80px; font-size: 14px; }
+
+/* Formation */
+.formation-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.f-col-label { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 5px; text-align: center; }
+.chk-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.chk-btn {
+  border-radius: 7px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text); font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; user-select: none; transition: all .12s;
+  width: 100%; aspect-ratio: 1; min-height: 0; min-width: 0;
+  box-sizing: border-box;
+}
+.chk-btn.sel { background: var(--green); border-color: var(--green); color: #fff; }
+.all-btn {
+  width: 100%; margin-top: 5px; padding: 5px 0;
+  border-radius: 7px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text2);
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: all .12s; font-family: inherit;
+}
+.all-btn:active { background: var(--green); color: #fff; border-color: var(--green); }
+.combo-info {
+  margin-top: 10px; padding: 10px 12px; background: var(--surface2);
+  border-radius: 10px; display: flex; justify-content: space-between; align-items: center;
+}
+.combo-info-label { font-size: 12px; color: var(--text2); }
+.combo-info-val { font-size: 15px; font-weight: 700; color: var(--green); }
+
+/* Payout hint */
+.payout-hint {
+  margin-top: 8px; padding: 10px 13px; background: var(--surface2);
+  border-radius: 10px; font-size: 13px; color: var(--text2); line-height: 1.6;
+  display: none;
+}
+.payout-hint.visible { display: block; }
+.payout-profit { font-weight: 700; }
+
+/* Buttons */
+.btn {
+  width: 100%; padding: 14px; border-radius: 12px; border: none;
+  font-size: 16px; font-weight: 700; cursor: pointer; transition: all .12s;
+  font-family: inherit;
+}
+.btn-primary { background: var(--green); color: #fff; }
+.btn-primary:active { transform: scale(0.98); opacity: .9; }
+.btn-ghost {
+  background: var(--surface2); color: var(--text2);
+  border: 1px solid var(--border); font-weight: 500;
+}
+.btn-sm {
+  padding: 6px 12px; font-size: 12px; font-weight: 500; border-radius: 8px;
+  width: auto; border: 1px solid var(--border); background: var(--surface2); color: var(--text2);
+}
+.btn-danger-sm { color: var(--red); border-color: rgba(226,75,74,.3); }
+
+/* Win/Lose tag */
+.tag {
+  display: inline-block; padding: 3px 9px; border-radius: 20px;
+  font-size: 11px; font-weight: 700;
+}
+.tag.win { background: #d4edda; color: #1a5c2a; }
+.tag.lose { background: #fde8e8; color: #8b2020; }
+.tag.pending { background: #fef3cd; color: #7a5000; }
+
+/* Race list */
+.race-item {
+  background: var(--surface); border-radius: var(--radius);
+  padding: 13px 14px; margin-bottom: 8px;
+  border: 0.5px solid var(--border);
+  border-left: 3px solid var(--border);
+}
+.race-item.win { border-left-color: var(--green); }
+.race-item.lose { border-left-color: var(--red); }
+.race-item.pending { border-left-color: var(--amber); }
+.race-item-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 7px; }
+.race-item-title { font-size: 15px; font-weight: 700; }
+.race-item-sub { font-size: 12px; color: var(--text2); margin-top: 2px; font-family: 'Courier New', monospace; }
+.race-item-nums { display: flex; gap: 12px; font-size: 13px; }
+.race-num-item { display: flex; flex-direction: column; gap: 1px; }
+.race-num-label { font-size: 10px; color: var(--text3); }
+.race-num-val { font-weight: 600; }
+.race-num-val.profit-pos { color: var(--green); }
+.race-num-val.profit-neg { color: var(--red); }
+
+/* Filter bar */
+.filter-bar { display: flex; gap: 7px; margin-bottom: 10px; overflow-x: auto; padding-bottom: 2px; }
+.filter-bar::-webkit-scrollbar { display: none; }
+.filter-chip {
+  flex-shrink: 0; padding: 6px 14px; border-radius: 20px; font-size: 12px;
+  font-weight: 600; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text2); cursor: pointer; white-space: nowrap;
+}
+.filter-chip.active { background: var(--green); border-color: var(--green); color: #fff; }
+
+/* Chart */
+.chart-wrap { position: relative; width: 100%; height: 180px; margin-top: 4px; }
+
+/* Empty state */
+.empty {
+  text-align: center; padding: 48px 24px; color: var(--text3);
+}
+.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-text { font-size: 14px; line-height: 1.6; }
+
+/* Sync status */
+.sync-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 500;
+  background: rgba(255,255,255,.15); color: rgba(255,255,255,.85);
+  cursor: pointer; transition: all .15s;
+}
+.sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #aaa; flex-shrink: 0; }
+.sync-dot.ok { background: #4ade80; }
+.sync-dot.err { background: #f87171; }
+.sync-dot.syncing { background: #fbbf24; animation: pulse 1s infinite; }
+
+/* Sync setup panel */
+.sync-panel {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 600;
+  background: rgba(0,0,0,.5); display: none; align-items: flex-end;
+}
+.sync-panel.open { display: flex; }
+.sync-panel-inner {
+  background: var(--surface); width: 100%; border-radius: 20px 20px 0 0;
+  padding: 20px 18px calc(var(--safe-bottom) + 20px); max-height: 80dvh; overflow-y: auto;
+}
+.sync-panel-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+.sync-panel-sub { font-size: 13px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
+.sync-id-box {
+  background: var(--surface2); border-radius: 10px; padding: 12px 14px;
+  font-family: 'Courier New', monospace; font-size: 15px; font-weight: 700;
+  letter-spacing: .08em; text-align: center; margin-bottom: 10px;
+  border: 1.5px dashed var(--border); color: var(--green);
+}
+.sync-steps { font-size: 12px; color: var(--text2); line-height: 1.8; margin-bottom: 16px; }
+.sync-steps b { color: var(--text); font-weight: 700; }
+.sync-input-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.sync-input-row input { flex: 1; font-family: 'Courier New', monospace; letter-spacing:.05em; font-size:14px; }
+.sync-notice { font-size: 11px; color: var(--text3); line-height: 1.6; margin-top: 10px; }
+
+/* Delete confirm dialog */
+.del-confirm {
+  position: fixed; bottom: calc(var(--safe-bottom) + 80px); left: 14px; right: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 16px; z-index: 500;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  transform: translateY(20px); opacity: 0;
+  transition: all .22s cubic-bezier(.32,0,.15,1);
+  pointer-events: none;
+}
+.del-confirm.open { transform: translateY(0); opacity: 1; pointer-events: all; }
+.del-confirm-msg { font-size: 14px; font-weight: 600; margin-bottom: 12px; text-align: center; }
+.del-confirm-sub { font-size: 12px; color: var(--text3); text-align: center; margin-bottom: 14px; }
+.del-confirm-btns { display: flex; gap: 8px; }
+.del-confirm-btns .btn { flex: 1; padding: 13px; font-size: 15px; }
+
+/* Toast */
+#toast {
+  position: fixed; bottom: calc(var(--safe-bottom) + 72px); left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--text); color: var(--surface);
+  padding: 10px 20px; border-radius: 20px; font-size: 13px; font-weight: 500;
+  opacity: 0; transition: all .25s; pointer-events: none; z-index: 200; white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Stat rows */
+.stat-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 0; border-bottom: 0.5px solid var(--border);
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-row-label { font-size: 13px; color: var(--text2); }
+.stat-row-val { font-size: 13px; font-weight: 700; }
+
+/* Section title */
+.section-title { font-size: 13px; font-weight: 700; color: var(--text2); margin: 14px 0 7px; padding-left: 2px; }
+
+/* Result input color */
+input.hit { border-color: var(--green) !important; }
+input.miss { border-color: var(--red) !important; }
+
+/* Bottom sheet modal */
+.sheet-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  z-index: 300; backdrop-filter: blur(2px);
+}
+.sheet-overlay.open { display: block; }
+.sheet {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 400;
+  background: var(--surface); border-radius: 20px 20px 0 0;
+  padding: 0 0 calc(var(--safe-bottom) + 12px);
+  transform: translateY(100%); transition: transform .32s cubic-bezier(.32,0,.15,1);
+  max-height: 92dvh; display: flex; flex-direction: column;
+}
+.sheet.open { transform: translateY(0); }
+.sheet-handle {
+  width: 36px; height: 4px; background: var(--border);
+  border-radius: 2px; margin: 10px auto 0;
+}
+.sheet-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px 10px; border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+}
+.sheet-title { font-size: 16px; font-weight: 700; }
+.sheet-close {
+  width: 30px; height: 30px; border-radius: 50%; border: none;
+  background: var(--surface2); color: var(--text2); font-size: 16px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.sheet-body { overflow-y: auto; padding: 14px 16px; flex: 1; }
+.sheet-body::-webkit-scrollbar { display: none; }
+.sheet-footer {
+  padding: 10px 16px 0; display: flex; gap: 8px; flex-shrink: 0;
+  border-top: 0.5px solid var(--border);
+}
+.sheet-footer .btn { flex: 1; padding: 13px; font-size: 15px; }
+
+/* Edit formation (in sheet) */
+.sheet-formation { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 8px; }
+.sheet-f-col label { font-size: 11px; font-weight: 600; color: var(--text3); display: block; text-align: center; margin-bottom: 5px; text-transform: uppercase; letter-spacing:.04em }
+.sheet-chk-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 3px; }
+.sheet-chk-btn {
+  border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text); font-size: 14px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; user-select: none; transition: all .1s;
+  width: 100%; aspect-ratio: 1; min-height: 0; min-width: 0;
+  box-sizing: border-box;
+}
+.sheet-chk-btn.sel { background: var(--green); border-color: var(--green); color: #fff; }
+.sheet-combo-info {
+  padding: 8px 10px; background: var(--surface2); border-radius: 8px;
+  display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 10px;
+}
+.sheet-combo-val { font-weight: 700; color: var(--green); }
+
+/* Race item tap hint */
+.race-item { cursor: pointer; transition: opacity .1s; }
+.race-item:active { opacity: .75; }
+.race-item-actions { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 0.5px solid var(--border); position: relative; z-index: 2; }
+.race-item-actions .btn-sm { flex: 1; text-align: center; min-height: 40px; }
+.btn-edit-sm { color: var(--green); border-color: rgba(29,158,117,.3); }
+
+/* 買い方チップ選択 */
+.buykata-group { display: flex; flex-wrap: wrap; gap: 6px; }
+.buykata-chip {
+  padding: 7px 13px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  border: 1.5px solid var(--border); background: var(--surface2); color: var(--text2);
+  cursor: pointer; user-select: none; transition: all .12s; white-space: nowrap;
+}
+.buykata-chip.sel { border-color: currentColor; }
+.buykata-chip[data-val="本命"].sel   { background:#EAF3DE; color:#2A6010; border-color:#2A6010; }
+.buykata-chip[data-val="1着ずらし"].sel { background:#EAF0FC; color:#1A48A0; border-color:#1A48A0; }
+.buykata-chip[data-val="2着ずらし"].sel { background:#EDF4FB; color:#1565A8; border-color:#1565A8; }
+.buykata-chip[data-val="穴"].sel     { background:#FEF0E6; color:#9C4A0A; border-color:#9C4A0A; }
+.buykata-chip[data-val="ココモ"].sel  { background:#E0F5FA; color:#0E7490; border-color:#0E7490; }
+.buykata-chip[data-val="その他"].sel { background:#F3F0FA; color:#5B3FA0; border-color:#5B3FA0; }
+/* same for small sheet chips */
+.buykata-chip.sm { padding: 5px 10px; font-size: 12px; }
+
+/* badge in list */
+.bk-badge {
+  display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:700; margin-left:4px;
+}
+.bk-badge.本命   { background:#EAF3DE; color:#2A6010; }
+.bk-badge.一着ずらし { background:#EAF0FC; color:#1A48A0; }
+.bk-badge.二着ずらし { background:#EDF4FB; color:#1565A8; }
+.bk-badge.穴     { background:#FEF0E6; color:#9C4A0A; }
+.bk-badge.その他 { background:#F3F0FA; color:#5B3FA0; }
+
+/* Date filter & daily summary */
+.date-filter-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.date-input-wrap { position: relative; flex: 1; min-width: 130px; }
+.date-input-wrap input[type=date] {
+  width: 100%; padding: 7px 10px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 20px;
+  background: var(--surface2); color: var(--text);
+  -webkit-appearance: none; appearance: none; font-family: inherit;
+}
+.date-input-wrap input[type=date]:focus { outline: none; border-color: var(--green); }
+.date-clear-btn {
+  flex-shrink: 0; padding: 7px 14px; border-radius: 20px; font-size: 12px;
+  font-weight: 600; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text3); cursor: pointer; white-space: nowrap;
+}
+.date-clear-btn.active { background: var(--red); border-color: var(--red); color: #fff; }
+.day-group-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 4px 4px; margin-top: 4px;
+}
+.day-group-date { font-size: 13px; font-weight: 700; color: var(--text2); }
+.day-group-summary { display: flex; gap: 10px; font-size: 12px; }
+.day-group-summary span { color: var(--text3); }
+.day-group-summary b { font-weight: 700; }
+
+/* Daily bar chart */
+.daily-bar-wrap { overflow-x: auto; padding-bottom: 4px; }
+.daily-bar-wrap::-webkit-scrollbar { display: none; }
+.daily-chart { display: flex; align-items: flex-end; gap: 4px; min-height: 80px; padding: 8px 0 0; }
+.daily-col { display: flex; flex-direction: column; align-items: center; gap: 3px; flex-shrink: 0; width: 36px; }
+.daily-bar-pos { background: var(--green); border-radius: 3px 3px 0 0; width: 100%; min-height: 4px; transition: height .3s; }
+.daily-bar-neg { background: var(--red); border-radius: 0 0 3px 3px; width: 100%; min-height: 4px; transition: height .3s; }
+.daily-bar-zero { height: 2px; background: var(--border); width: 100%; }
+.daily-col-label { font-size: 9px; color: var(--text3); text-align: center; white-space: nowrap; }
+.daily-col-val { font-size: 9px; font-weight: 700; text-align: center; white-space: nowrap; }
+
+/* buying type analysis card */
+.bk-stat-bar { height: 6px; border-radius: 3px; background: var(--green); margin-top: 4px; transition: width .4s; }
+.bk-stat-row { padding: 10px 0; border-bottom: 0.5px solid var(--border); }
+.bk-stat-row:last-child { border-bottom: none; }
+.bk-stat-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+.bk-stat-label { font-size: 13px; font-weight: 700; }
+.bk-stat-nums { display: flex; gap: 14px; font-size: 11px; color: var(--text3); }
+.bk-stat-num b { font-weight: 700; font-size: 13px; color: var(--text); }
+
+/* 個別金額入力 */
+.bet-mode-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+.bet-mode-btn {
+  flex: 1; padding: 7px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--text2);
+  cursor: pointer; text-align: center; transition: all .12s;
+}
+.bet-mode-btn.active { background: var(--green); border-color: var(--green); color: #fff; }
+.individual-bets { display: flex; flex-direction: column; gap: 5px; max-height: 200px; overflow-y: auto; }
+.individual-bets::-webkit-scrollbar { display: none; }
+.bet-row {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface2); border-radius: 8px; padding: 6px 10px;
+}
+.bet-row-combo { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 700; flex: 1; color: var(--text); }
+.bet-row input { width: 80px; padding: 5px 8px; font-size: 13px; text-align: right; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.bet-row-unit { font-size: 11px; color: var(--text3); }
+
+/* フォーメーション着順列の表示切替 */
+.f-col-wrap { transition: opacity .2s; }
+.f-col-wrap.hidden { opacity: 0.2; pointer-events: none; }
+
+/* Install banner */
+#install-banner {
+  display: none; margin-bottom: 10px;
+  background: linear-gradient(135deg, var(--green-dark), var(--green));
+  border-radius: var(--radius); padding: 14px 16px; color: #fff;
+}
+#install-banner .ib-title { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+#install-banner .ib-sub { font-size: 12px; opacity: .8; margin-bottom: 10px; }
+#install-banner .ib-btn {
+  background: #fff; color: var(--green-dark);
+  border: none; border-radius: 8px; padding: 8px 16px;
+  font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div>
+      <div class="header-title">競艇収支</div>
+      <div class="header-sub" id="header-sub">ボートレース管理</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+      <div class="header-badge" id="header-badge">¥0</div>
+      <div class="sync-badge" onclick="openSyncPanel()" id="sync-badge">
+        <span class="sync-dot" id="sync-dot"></span>
+        <span id="sync-label">同期オフ</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="scroll-area" id="scroll-area">
+
+    <!-- PAGE: HOME / ENTRY -->
+    <div class="page active" id="page-entry">
+      <div id="install-banner">
+        <div class="ib-title">ホーム画面に追加してアプリとして使えます</div>
+        <div class="ib-sub">Safariの場合:「共有」→「ホーム画面に追加」</div>
+        <button class="ib-btn" id="install-btn" onclick="installApp()">インストール</button>
+      </div>
+
+      <div class="card">
+        <div class="card-label">レース基本情報</div>
+        <div class="row2" style="margin-bottom:8px">
+          <div class="field" style="margin:0">
+            <label class="field-label">開催日</label>
+            <input type="text" id="race-date" placeholder="2025/06/16">
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">競艇場</label>
+            <select id="venue">
+              <option value="">選択</option>
+              <option>桐生</option><option>戸田</option><option>江戸川</option><option>平和島</option>
+              <option>多摩川</option><option>浜名湖</option><option>蒲郡</option><option>常滑</option>
+              <option>津</option><option>三国</option><option>びわこ</option><option>住之江</option>
+              <option>尼崎</option><option>鳴門</option><option>丸亀</option><option>児島</option>
+              <option>宮島</option><option>徳山</option><option>下関</option><option>若松</option>
+              <option>芦屋</option><option>福岡</option><option>唐津</option><option>大村</option>
+            </select>
+          </div>
+        </div>
+        <div class="row3">
+          <div class="field" style="margin:0">
+            <label class="field-label">R番号</label>
+            <select id="race-num">
+              <option value="">選択</option>
+              <option>1R</option><option>2R</option><option>3R</option><option>4R</option>
+              <option>5R</option><option>6R</option><option>7R</option><option>8R</option>
+              <option>9R</option><option>10R</option><option>11R</option><option>12R</option>
+            </select>
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">グレード</label>
+            <select id="race-type">
+              <option>一般</option><option>SG</option><option>G1</option><option>G2</option><option>G3</option>
+            </select>
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">舟券</label>
+            <select id="ticket-type" onchange="onTicketChange()">
+              <option>3連単</option><option>3連複</option><option>2連単</option><option>2連複</option><option>拡連複</option><option>単勝</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">フォーメーション</div>
+        <div class="formation-row">
+          <div class="f-col-wrap" id="fw1">
+            <div class="f-col-label" id="flabel1">1着</div>
+            <div class="chk-grid" id="f1"></div>
+            <button class="all-btn" onclick="selectAll('f1')">全</button>
+          </div>
+          <div class="f-col-wrap" id="fw2">
+            <div class="f-col-label" id="flabel2">2着</div>
+            <div class="chk-grid" id="f2"></div>
+            <button class="all-btn" onclick="selectAll('f2')">全</button>
+          </div>
+          <div class="f-col-wrap" id="fw3">
+            <div class="f-col-label" id="flabel3">3着</div>
+            <div class="chk-grid" id="f3"></div>
+            <button class="all-btn" onclick="selectAll('f3')">全</button>
+          </div>
+        </div>
+        <div class="combo-info">
+          <span class="combo-info-label">買い目点数</span>
+          <span class="combo-info-val" id="combo-count">0 点</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">投資</div>
+        <div class="bet-mode-toggle">
+          <div class="bet-mode-btn active" id="mode-uniform" onclick="setBetMode('uniform')">全点同額</div>
+          <div class="bet-mode-btn" id="mode-individual" onclick="setBetMode('individual')">個別設定</div>
+        </div>
+        <div id="uniform-bet-area">
+          <div class="row2">
+            <div class="field" style="margin:0">
+              <label class="field-label">1点の金額 (円)</label>
+              <input type="number" id="unit-bet" value="100" min="100" step="100" inputmode="numeric">
+            </div>
+            <div class="field" style="margin:0">
+              <label class="field-label">投資合計</label>
+              <input type="number" id="total-bet" readonly>
+            </div>
+          </div>
+        </div>
+        <div id="individual-bet-area" style="display:none">
+          <div class="individual-bets" id="individual-bets-list"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border)">
+            <span style="font-size:12px;color:var(--text2)">投資合計</span>
+            <span style="font-size:15px;font-weight:700" id="individual-total">¥0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">結果 (レース後に入力)</div>
+        <div class="row3" style="margin-bottom:8px">
+          <div class="field" style="margin:0">
+            <label class="field-label">着順 (例: 1-3-5)</label>
+            <input type="text" id="result-input" placeholder="1-3-5" inputmode="numeric">
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">オッズ</label>
+            <input type="number" id="odds-input" placeholder="12.5" step="0.1" inputmode="decimal">
+          </div>
+          <div class="field" style="margin:0">
+            <label class="field-label">回収金額</label>
+            <input type="number" id="payout-input" readonly>
+          </div>
+        </div>
+        <div class="payout-hint" id="payout-hint"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">買い方</div>
+        <div class="buykata-group" id="buykata-group">
+          <div class="buykata-chip" data-val="本命"     onclick="selectBuykata(this)">🏆 本命</div>
+          <div class="buykata-chip" data-val="1着ずらし" onclick="selectBuykata(this)">↕️ 1着ずらし</div>
+          <div class="buykata-chip" data-val="2着ずらし" onclick="selectBuykata(this)">↔️ 2着ずらし</div>
+          <div class="buykata-chip" data-val="穴"       onclick="selectBuykata(this)">🎯 穴</div>
+          <div class="buykata-chip" data-val="ココモ"   onclick="selectBuykata(this)">🔄 ココモ</div>
+          <div class="buykata-chip" data-val="その他"   onclick="selectBuykata(this)">📝 その他</div>
+        </div>
+        <div style="margin-top:10px">
+          <label class="field-label">買い方メモ（作戦・根拠など）</label>
+          <textarea id="strategy-memo" style="height:56px;margin:0" placeholder="例：1号艇モーター良好、2着穴狙いで4番を入れる…"></textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">その他メモ</div>
+        <textarea id="memo-input" placeholder="天候・コース・展示タイムなど…"></textarea>
+      </div>
+
+      <button class="btn btn-primary" onclick="addEntry()" style="margin-bottom:8px">保存する</button>
+      <button class="btn btn-ghost" onclick="clearForm()">クリア</button>
+    </div>
+
+    <!-- PAGE: LIST -->
+    <div class="page" id="page-list">
+      <div class="metric-row">
+        <div class="metric">
+          <div class="metric-label">総収支</div>
+          <div class="metric-val sm" id="ls-profit">¥0</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">回収率</div>
+          <div class="metric-val sm" id="ls-roi">0%</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:12px 14px 10px">
+        <div class="chart-wrap">
+          <canvas id="profitChart" role="img" aria-label="累積収支グラフ">累積収支の推移</canvas>
+        </div>
+      </div>
+
+      <div class="date-filter-row">
+        <div class="date-input-wrap">
+          <input type="date" id="filter-date" onchange="applyDateFilter()" placeholder="日付で絞り込み">
+        </div>
+        <button class="date-clear-btn" id="date-clear-btn" onclick="clearDateFilter()">日付クリア</button>
+      </div>
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="setFilter('all',this)">すべて</div>
+        <div class="filter-chip" onclick="setFilter('win',this)">的中</div>
+        <div class="filter-chip" onclick="setFilter('lose',this)">外れ</div>
+        <div class="filter-chip" onclick="setFilter('pending',this)">未入力</div>
+      </div>
+
+      <div id="race-list"></div>
+      <div class="empty" id="empty-state" style="display:none">
+        <div class="empty-icon">🚤</div>
+        <div class="empty-text">まだレースが登録されていません<br>「入力」タブから追加してください</div>
+      </div>
+    </div>
+
+    <!-- PAGE: ANALYSIS -->
+    <div class="page" id="page-analysis">
+      <div class="metric-row">
+        <div class="metric"><div class="metric-label">総投資</div><div class="metric-val sm neu" id="an-invest">¥0</div></div>
+        <div class="metric"><div class="metric-label">総回収</div><div class="metric-val sm pos" id="an-return">¥0</div></div>
+      </div>
+      <div class="metric-row">
+        <div class="metric"><div class="metric-label">的中率</div><div class="metric-val sm neu" id="an-hitrate">0%</div></div>
+        <div class="metric"><div class="metric-label">平均オッズ</div><div class="metric-val sm neu" id="an-avgodds">-</div></div>
+      </div>
+      <div class="metric-row">
+        <div class="metric"><div class="metric-label">最大配当</div><div class="metric-val sm pos" id="an-maxwin">¥0</div></div>
+        <div class="metric"><div class="metric-label">現在連敗</div><div class="metric-val sm neg" id="an-streak">0</div></div>
+      </div>
+
+      <div class="section-title">日別収支</div>
+      <div class="card">
+        <div class="daily-bar-wrap"><div class="daily-chart" id="daily-chart"></div></div>
+        <div id="daily-stats" style="margin-top:8px"></div>
+      </div>
+
+      <div class="section-title">買い方別成績</div>
+      <div class="card"><div id="buykata-stats"></div></div>
+
+      <div class="section-title">競艇場別収支</div>
+      <div class="card"><div id="venue-stats"></div></div>
+
+      <div class="section-title">舟券種別</div>
+      <div class="card"><div id="ticket-stats"></div></div>
+
+      <div class="section-title">月別収支</div>
+      <div class="card"><div id="monthly-stats"></div></div>
+
+      <div class="section-title">データ管理</div>
+      <div class="card" style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost" style="flex:1;font-size:13px;padding:10px" onclick="exportCSV()">CSV出力</button>
+        <button class="btn btn-ghost" style="flex:1;font-size:13px;padding:10px;color:var(--red)" onclick="clearAll()">全削除</button>
+      </div>
+    </div>
+
+  </div><!-- end scroll-area -->
+
+  <!-- Bottom nav -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" id="nav-entry" onclick="showPage('entry')">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+      </svg>
+      入力
+    </button>
+    <button class="nav-item" id="nav-list" onclick="showPage('list')">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+        <circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><circle cx="3" cy="18" r="1" fill="currentColor"/>
+      </svg>
+      一覧
+    </button>
+    <button class="nav-item" id="nav-analysis" onclick="showPage('analysis')">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
+      分析
+    </button>
+  </nav>
+</div>
+
+<div id="toast"></div>
+
+<!-- Edit bottom sheet -->
+<div class="sheet-overlay" id="sheet-overlay" onclick="closeSheet()"></div>
+<div class="sheet" id="edit-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="sheet-title" id="sheet-title">レースを編集</div>
+    <button class="sheet-close" onclick="closeSheet()">✕</button>
+  </div>
+  <div class="sheet-body">
+    <div class="row2" style="margin-bottom:8px">
+      <div class="field" style="margin:0"><label class="field-label">開催日</label><input type="text" id="e-date"></div>
+      <div class="field" style="margin:0"><label class="field-label">競艇場</label>
+        <select id="e-venue"><option>桐生</option><option>戸田</option><option>江戸川</option><option>平和島</option><option>多摩川</option><option>浜名湖</option><option>蒲郡</option><option>常滑</option><option>津</option><option>三国</option><option>びわこ</option><option>住之江</option><option>尼崎</option><option>鳴門</option><option>丸亀</option><option>児島</option><option>宮島</option><option>徳山</option><option>下関</option><option>若松</option><option>芦屋</option><option>福岡</option><option>唐津</option><option>大村</option></select>
+      </div>
+    </div>
+    <div class="row3" style="margin-bottom:10px">
+      <div class="field" style="margin:0"><label class="field-label">R番号</label>
+        <select id="e-race"><option>1R</option><option>2R</option><option>3R</option><option>4R</option><option>5R</option><option>6R</option><option>7R</option><option>8R</option><option>9R</option><option>10R</option><option>11R</option><option>12R</option></select>
+      </div>
+      <div class="field" style="margin:0"><label class="field-label">グレード</label>
+        <select id="e-type"><option>一般</option><option>SG</option><option>G1</option><option>G2</option><option>G3</option></select>
+      </div>
+      <div class="field" style="margin:0"><label class="field-label">舟券</label>
+        <select id="e-ticket" onchange="onSheetTicketChange()"><option>3連単</option><option>3連複</option><option>2連単</option><option>2連複</option><option>拡連複</option><option>単勝</option></select>
+      </div>
+    </div>
+    <div class="card-label" style="margin-bottom:8px">フォーメーション</div>
+    <div class="sheet-formation">
+      <div class="sheet-f-col f-col-wrap" id="e-fw1"><label id="e-flabel1">1着</label><div class="sheet-chk-grid" id="e-f1"></div><button class="all-btn" onclick="selectAll('e-f1','sheet')">全</button></div>
+      <div class="sheet-f-col f-col-wrap" id="e-fw2"><label id="e-flabel2">2着</label><div class="sheet-chk-grid" id="e-f2"></div><button class="all-btn" onclick="selectAll('e-f2','sheet')">全</button></div>
+      <div class="sheet-f-col f-col-wrap" id="e-fw3"><label id="e-flabel3">3着</label><div class="sheet-chk-grid" id="e-f3"></div><button class="all-btn" onclick="selectAll('e-f3','sheet')">全</button></div>
+    </div>
+    <div class="sheet-combo-info"><span>買い目点数</span><span class="sheet-combo-val" id="e-combo-count">0 点</span></div>
+    <div class="bet-mode-toggle" style="margin-bottom:8px">
+      <div class="bet-mode-btn active" id="e-mode-uniform" onclick="setSheetBetMode('uniform')">全点同額</div>
+      <div class="bet-mode-btn" id="e-mode-individual" onclick="setSheetBetMode('individual')">個別設定</div>
+    </div>
+    <div id="e-uniform-bet-area">
+      <div class="row2" style="margin-bottom:8px">
+        <div class="field" style="margin:0"><label class="field-label">1点の金額 (円)</label><input type="number" id="e-unit" min="100" step="100" inputmode="numeric"></div>
+        <div class="field" style="margin:0"><label class="field-label">投資合計</label><input type="number" id="e-total" readonly></div>
+      </div>
+    </div>
+    <div id="e-individual-bet-area" style="display:none;margin-bottom:8px">
+      <div class="individual-bets" id="e-individual-bets-list"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border)">
+        <span style="font-size:12px;color:var(--text2)">投資合計</span>
+        <span style="font-size:15px;font-weight:700" id="e-individual-total">¥0</span>
+      </div>
+    </div>
+    <div class="row3" style="margin-bottom:8px">
+      <div class="field" style="margin:0"><label class="field-label">着順結果</label><input type="text" id="e-result" placeholder="1-3-5" inputmode="numeric"></div>
+      <div class="field" style="margin:0"><label class="field-label">オッズ</label><input type="number" id="e-odds" step="0.1" inputmode="decimal"></div>
+      <div class="field" style="margin:0"><label class="field-label">回収金額</label><input type="number" id="e-payout" readonly></div>
+    </div>
+    <div class="field">
+      <label class="field-label">買い方</label>
+      <div class="buykata-group" id="e-buykata-group" style="margin-bottom:8px">
+        <div class="buykata-chip sm" data-val="本命"     onclick="selectEBuykata(this)">🏆 本命</div>
+        <div class="buykata-chip sm" data-val="1着ずらし" onclick="selectEBuykata(this)">↕️ 1着ずらし</div>
+        <div class="buykata-chip sm" data-val="2着ずらし" onclick="selectEBuykata(this)">↔️ 2着ずらし</div>
+        <div class="buykata-chip sm" data-val="穴"       onclick="selectEBuykata(this)">🎯 穴</div>
+        <div class="buykata-chip sm" data-val="ココモ"   onclick="selectEBuykata(this)">🔄 ココモ</div>
+        <div class="buykata-chip sm" data-val="その他"   onclick="selectEBuykata(this)">📝 その他</div>
+      </div>
+    </div>
+    <div class="field"><label class="field-label">買い方メモ</label><textarea id="e-strategy-memo" style="height:48px;margin:0" placeholder="作戦・根拠など…"></textarea></div>
+    <div class="field"><label class="field-label">その他メモ</label><textarea id="e-memo" style="height:48px;margin:0"></textarea></div>
+  </div>
+  <div class="sheet-footer">
+    <button class="btn btn-ghost" onclick="sheetDelete()" style="flex:0 0 auto;width:auto;padding:13px 18px;color:var(--red)">削除</button>
+    <button class="btn btn-primary" onclick="sheetSave()">保存する</button>
+  </div>
+</div>
+
+<!-- Sync setup panel -->
+<div class="sync-panel" id="sync-panel" onclick="closeSyncPanel(event)">
+  <div class="sync-panel-inner" onclick="event.stopPropagation()">
+    <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px"></div>
+    <div class="sync-panel-title">📡 端末間リアルタイム同期</div>
+    <div class="sync-panel-sub">同じ「同期ID」を使うとスマホとPCのデータがリアルタイムで統合されます。</div>
+
+    <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:6px">あなたの同期ID</div>
+    <div class="sync-id-box" id="my-sync-id">-</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn btn-ghost" style="flex:1;font-size:13px;padding:10px" onclick="copySyncId()">IDをコピー</button>
+      <button class="btn btn-ghost" style="flex:1;font-size:13px;padding:10px;color:var(--red)" onclick="resetSyncId()">IDをリセット</button>
+    </div>
+
+    <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:8px">別の端末のIDを入力して同期</div>
+    <div class="sync-input-row">
+      <input type="text" id="sync-id-input" placeholder="例: ABC123XY" style="text-transform:uppercase">
+      <button class="btn btn-primary" style="width:auto;padding:11px 16px;font-size:14px" onclick="applySyncId()">接続</button>
+    </div>
+
+    <div class="sync-steps">
+      <b>使い方：</b><br>
+      ① スマホでこの画面を開き「IDをコピー」<br>
+      ② PCでIDを入力欄に貼り付けて「接続」<br>
+      ③ 以降どちらで入力しても自動で同期されます
+    </div>
+
+    <div id="sync-status-msg" style="font-size:13px;color:var(--green);text-align:center;min-height:20px;margin-bottom:10px"></div>
+
+    <div class="sync-notice">
+      ※ 同期にはFirebaseの設定が必要です。HTMLファイル内の FIREBASE_CONFIG にご自身のFirebaseプロジェクト情報を入力してください。設定なしの場合はこの端末内のみで動作します。
+    </div>
+
+    <button class="btn btn-ghost" style="margin-top:14px" onclick="closeSyncPanel()">閉じる</button>
+  </div>
+</div>
+
+<!-- Delete confirm dialog -->
+<div class="del-confirm" id="del-confirm">
+  <div class="del-confirm-msg" id="del-confirm-msg">削除しますか？</div>
+  <div class="del-confirm-sub">この操作は取り消せません</div>
+  <div class="del-confirm-btns">
+    <button class="btn btn-ghost" onclick="cancelDel()">キャンセル</button>
+    <button class="btn" id="del-confirm-btn" style="background:var(--red);color:#fff" onclick="executeDel()">削除する</button>
+  </div>
+</div>
+
+<script>
+let entries = JSON.parse(localStorage.getItem('boat_pwa_v1') || '[]');
+let filterMode = 'all';
+let filterDate = '';
+let profitChart = null;
+let deferredPrompt = null;
+
+function save() {
+  localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
+  syncToCloud();
+}
+
+// ===== SYNC ENGINE =====
+let syncId = localStorage.getItem('boat_sync_id') || '';
+let unsubscribeSync = null;
+let syncEnabled = false;
+let isSyncing = false;
+
+function generateId() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:8}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+function initSyncId() {
+  if (!syncId) {
+    syncId = generateId();
+    localStorage.setItem('boat_sync_id', syncId);
+  }
+  document.getElementById('my-sync-id').textContent = syncId;
+}
+
+function setSyncStatus(state, label) {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-label');
+  dot.className = 'sync-dot ' + state;
+  lbl.textContent = label;
+}
+
+async function syncToCloud() {
+  if (!syncEnabled || !window._firebaseReady || !window._db) return;
+  try {
+    const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    setSyncStatus('syncing', '同期中…');
+    isSyncing = true; // 自分の書き込みによるsnapshotを無視するフラグ
+    const localSnapshot = JSON.stringify(entries); // 書き込み時点のスナップショット
+    await setDoc(doc(window._db, 'boatrace', syncId), {
+      entries: localSnapshot,
+      updatedAt: Date.now()
+    });
+    setSyncStatus('ok', '同期済み ✓');
+    // 少し待ってからフラグを解除（onSnapshotが発火するのを待つ）
+    setTimeout(() => { isSyncing = false; }, 1500);
+  } catch(e) {
+    isSyncing = false;
+    setSyncStatus('err', '同期エラー');
+    console.warn('sync error', e);
+  }
+}
+
+async function startRealtimeSync() {
+  if (!window._firebaseReady || !window._db) {
+    setSyncStatus('err', 'Firebase未設定');
+    document.getElementById('sync-status-msg').textContent = 'Firebase設定が必要です';
+    return false;
+  }
+  if (unsubscribeSync) unsubscribeSync();
+  try {
+    const { doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    setSyncStatus('syncing', '接続中…');
+    unsubscribeSync = onSnapshot(doc(window._db, 'boatrace', syncId), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const remote = JSON.parse(data.entries || '[]');
+        // 自分の書き込みによるsnapshotは無視（編集上書き防止）
+        if (isSyncing) {
+          setSyncStatus('ok', '同期済み ✓');
+          return;
+        }
+        // Merge: idをキーに、updatedAtが新しい方を優先
+        const merged = mergeEntries(entries, remote);
+        if (JSON.stringify(merged) !== JSON.stringify(entries)) {
+          entries = merged;
+          localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
+          renderList(); renderChart(); updateHeader();
+          if (document.getElementById('page-analysis').classList.contains('active')) renderAnalysis();
+        }
+        setSyncStatus('ok', '同期済み ✓');
+      } else {
+        // First time: push local data
+        syncToCloud();
+        setSyncStatus('ok', '同期済み ✓');
+      }
+    }, (err) => {
+      setSyncStatus('err', '同期エラー');
+      console.warn('snapshot error', err);
+    });
+    syncEnabled = true;
+    return true;
+  } catch(e) {
+    setSyncStatus('err', '同期エラー');
+    return false;
+  }
+}
+
+function mergeEntries(local, remote) {
+  const map = {};
+  // まずリモートを入れる
+  remote.forEach(e => { map[e.id] = e; });
+  // ローカルで上書き（ローカルの方が常に最新）
+  local.forEach(e => { map[e.id] = e; });
+  return Object.values(map).sort((a,b) => b.id - a.id);
+}
+
+function stopSync() {
+  if (unsubscribeSync) { unsubscribeSync(); unsubscribeSync = null; }
+  syncEnabled = false;
+  setSyncStatus('', '同期オフ');
+}
+
+// Sync panel
+function openSyncPanel() {
+  initSyncId();
+  document.getElementById('sync-panel').classList.add('open');
+}
+function closeSyncPanel(e) {
+  if (e && e.target !== document.getElementById('sync-panel')) return;
+  document.getElementById('sync-panel').classList.remove('open');
+}
+function copySyncId() {
+  navigator.clipboard.writeText(syncId).then(()=>toast('IDをコピーしました')).catch(()=>{
+    document.getElementById('sync-id-input').value = syncId;
+    toast('上の入力欄にIDが入りました');
+  });
+}
+function resetSyncId() {
+  if (!window.confirm && true) {
+    syncId = generateId();
+    localStorage.setItem('boat_sync_id', syncId);
+    document.getElementById('my-sync-id').textContent = syncId;
+    stopSync(); startRealtimeSync();
+    toast('新しいIDを発行しました');
+    return;
+  }
+}
+async function applySyncId() {
+  const input = document.getElementById('sync-id-input').value.trim().toUpperCase();
+  if (input.length < 6) { toast('IDを入力してください'); return; }
+  syncId = input;
+  localStorage.setItem('boat_sync_id', syncId);
+  document.getElementById('my-sync-id').textContent = syncId;
+  document.getElementById('sync-status-msg').textContent = '接続中…';
+  const ok = await startRealtimeSync();
+  document.getElementById('sync-status-msg').textContent = ok ? '✓ 同期を開始しました' : 'Firebase設定が必要です';
+  if (ok) setTimeout(()=>document.getElementById('sync-panel').classList.remove('open'), 1500);
+}
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('install-banner').style.display = 'block';
+});
+window.addEventListener('appinstalled', () => {
+  document.getElementById('install-banner').style.display = 'none';
+});
+function installApp() {
+  if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
+}
+
+// Check if already installed
+if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+  document.getElementById('install-banner').style.display = 'none';
+}
+
+// Page nav
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  document.getElementById('scroll-area').scrollTop = 0;
+  if (name === 'list') { renderList(); renderChart(); }
+  if (name === 'analysis') { renderAnalysis(); }
+}
+
+// Formation
+function makeChk(id) {
+  const el = document.getElementById(id);
+  for (let i = 1; i <= 6; i++) {
+    const b = document.createElement('div');
+    b.className = 'chk-btn'; b.textContent = i; b.dataset.val = i;
+    b.addEventListener('click', () => { b.classList.toggle('sel'); updateCombos(); });
+    el.appendChild(b);
+  }
+}
+makeChk('f1'); makeChk('f2'); makeChk('f3');
+
+function selectAll(groupId, type) {
+  const selector = type === 'sheet' ? '.sheet-chk-btn' : '.chk-btn';
+  const btns = document.querySelectorAll('#' + groupId + ' ' + selector);
+  const allSel = [...btns].every(b => b.classList.contains('sel'));
+  // トグル: 全部選択済みなら全解除、それ以外は全選択
+  btns.forEach(b => {
+    if (allSel) b.classList.remove('sel');
+    else b.classList.add('sel');
+  });
+  if (type === 'sheet') updateSheetCombos();
+  else updateCombos();
+}
+
+function selectBuykata(el) {
+  document.querySelectorAll('#buykata-group .buykata-chip').forEach(c=>c.classList.remove('sel'));
+  el.classList.add('sel');
+}
+function selectEBuykata(el) {
+  document.querySelectorAll('#e-buykata-group .buykata-chip').forEach(c=>c.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function getSel(id) {
+  return [...document.querySelectorAll('#' + id + ' .chk-btn.sel')].map(b => +b.dataset.val);
+}
+function getCombos() {
+  const a = getSel('f1'), b = getSel('f2'), c = getSel('f3');
+  const out = [];
+  for (const x of a) for (const y of b) for (const z of c)
+    if (x !== y && y !== z && x !== z) out.push([x, y, z]);
+  return out;
+}
+// 舟券種別 → フォーメーション列数マッピング
+const TICKET_COLS = {
+  '3連単': 3, '3連複': 3, '2連単': 2, '2連複': 2, '拡連複': 2, '単勝': 1
+};
+const TICKET_LABELS = {
+  '3連単': ['1着','2着','3着'], '3連複': ['1着','2着','3着'],
+  '2連単': ['1着','2着',''], '2連複': ['1着','2着',''],
+  '拡連複': ['1着','2着',''], '単勝': ['1着','','']
+};
+
+let betMode = 'uniform'; // 'uniform' or 'individual'
+
+function onTicketChange() {
+  const ticket = document.getElementById('ticket-type').value;
+  const cols = TICKET_COLS[ticket] || 3;
+  const labels = TICKET_LABELS[ticket] || ['1着','2着','3着'];
+  // 列の表示/非表示
+  [1,2,3].forEach(i => {
+    const wrap = document.getElementById('fw' + i);
+    const lbl = document.getElementById('flabel' + i);
+    if (wrap) wrap.classList.toggle('hidden', i > cols);
+    if (lbl && labels[i-1]) lbl.textContent = labels[i-1];
+    // 非表示列は全選択解除
+    if (i > cols) {
+      document.querySelectorAll('#f' + i + ' .chk-btn').forEach(b => b.classList.remove('sel'));
+    }
+  });
+  updateCombos();
+}
+
+function getBetCols() {
+  const ticket = document.getElementById('ticket-type').value;
+  return TICKET_COLS[ticket] || 3;
+}
+
+function getComboStr(combo) {
+  const cols = getBetCols();
+  return combo.slice(0, cols).join('-');
+}
+
+function getActiveCombos() {
+  const cols = getBetCols();
+  const ticket = document.getElementById('ticket-type').value;
+  const a = getSel('f1');
+  if (cols === 1) return a.map(x => [x]);
+  const b = getSel('f2');
+  if (cols === 2) {
+    const out = [];
+    const isRen = ticket === '2連複' || ticket === '拡連複';
+    for (const x of a) for (const y of b) {
+      if (x === y) continue;
+      if (isRen) { const key = [x,y].sort().join('-'); if (!out.find(c=>c.join('-')===key)) out.push([Math.min(x,y),Math.max(x,y)]); }
+      else out.push([x,y]);
+    }
+    return out;
+  }
+  const c = getSel('f3');
+  const is3Ren = ticket === '3連複';
+  const out = [];
+  for (const x of a) for (const y of b) for (const z of c) {
+    if (x===y||y===z||x===z) continue;
+    if (is3Ren) { const key = [x,y,z].sort().join('-'); if (!out.find(cc=>cc.sort().join('-')===key)) out.push([x,y,z].sort()); }
+    else out.push([x,y,z]);
+  }
+  return out;
+}
+
+function setBetMode(mode) {
+  betMode = mode;
+  document.getElementById('mode-uniform').classList.toggle('active', mode==='uniform');
+  document.getElementById('mode-individual').classList.toggle('active', mode==='individual');
+  document.getElementById('uniform-bet-area').style.display = mode==='uniform' ? '' : 'none';
+  document.getElementById('individual-bet-area').style.display = mode==='individual' ? '' : 'none';
+  updateCombos();
+}
+
+function renderIndividualBets(combos) {
+  const list = document.getElementById('individual-bets-list');
+  const prevVals = {};
+  list.querySelectorAll('.bet-row').forEach(row => {
+    prevVals[row.dataset.combo] = row.querySelector('input').value;
+  });
+  list.innerHTML = combos.map(c => {
+    const key = c.join('-');
+    const prev = prevVals[key] || '100';
+    return `<div class="bet-row" data-combo="${key}">
+      <span class="bet-row-combo">${getComboStr(c)}</span>
+      <input type="number" value="${prev}" min="100" step="100" inputmode="numeric" onchange="calcIndividualTotal()">
+      <span class="bet-row-unit">円</span>
+    </div>`;
+  }).join('');
+  calcIndividualTotal();
+}
+
+function calcIndividualTotal() {
+  const inputs = document.querySelectorAll('#individual-bets-list .bet-row input');
+  const total = [...inputs].reduce((s,i) => s + (parseInt(i.value)||0), 0);
+  document.getElementById('individual-total').textContent = '¥' + total.toLocaleString();
+}
+
+function getIndividualBets() {
+  const bets = {};
+  document.querySelectorAll('#individual-bets-list .bet-row').forEach(row => {
+    bets[row.dataset.combo] = parseInt(row.querySelector('input').value) || 100;
+  });
+  return bets;
+}
+
+function getIndividualTotal() {
+  return [...document.querySelectorAll('#individual-bets-list .bet-row input')]
+    .reduce((s,i) => s + (parseInt(i.value)||0), 0);
+}
+
+function updateCombos() {
+  const combos = getActiveCombos();
+  document.getElementById('combo-count').textContent = combos.length + ' 点';
+  if (betMode === 'uniform') {
+    const unit = parseInt(document.getElementById('unit-bet').value) || 100;
+    document.getElementById('total-bet').value = unit * combos.length || '';
+  } else {
+    renderIndividualBets(combos);
+  }
+  calcPayout();
+}
+
+document.getElementById('unit-bet').addEventListener('input', updateCombos);
+document.getElementById('ticket-type').addEventListener('change', () => { onTicketChange(); updateResultPlaceholder(); });
+function updateResultPlaceholder() {
+  const ticket = document.getElementById('ticket-type').value;
+  const placeholders = {
+    '3連単':'例: 1-3-5', '3連複':'例: 1-3-5', '2連単':'例: 1-2', '2連複':'例: 1-2', '拡連複':'例: 1-2', '単勝':'例: 1'
+  };
+  document.getElementById('result-input').placeholder = placeholders[ticket] || '例: 1-3-5';
+}
+document.getElementById('odds-input').addEventListener('input', calcPayout);
+document.getElementById('result-input').addEventListener('input', () => { autoCheck(); calcPayout(); });
+
+function calcPayout() {
+  const odds = normalizeOdds(document.getElementById('odds-input').value);
+  const unit = betMode === 'uniform' ? (parseInt(document.getElementById('unit-bet').value) || 100) : 100;
+  const total = betMode === 'uniform' ? (parseInt(document.getElementById('total-bet').value) || 0) : getIndividualTotal();
+  const hint = document.getElementById('payout-hint');
+  if (!odds) { document.getElementById('payout-input').value = ''; hint.classList.remove('visible'); return; }
+  const payout = Math.floor(Math.round(odds * unit * 10) / 10);
+  document.getElementById('payout-input').value = payout;
+  const profit = payout - total;
+  const sign = profit >= 0 ? '+' : '';
+  const color = profit >= 0 ? 'var(--green)' : 'var(--red)';
+  hint.innerHTML = `1点 ${unit.toLocaleString()}円 × ${odds}倍 = ¥${payout.toLocaleString()} &nbsp;|&nbsp; 収支: <span class="payout-profit" style="color:${color}">${sign}${profit.toLocaleString()}円</span>`;
+  hint.classList.add('visible');
+}
+
+// オッズ入力の正規化（全角数字・全角ドット・全角マイナスなど対応）
+function normalizeOdds(val) {
+  if (!val && val !== 0) return 0;
+  const str = String(val)
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[．。]/g, '.')
+    .replace(/[^0-9.]/g, '');
+  return parseFloat(str) || 0;
+}
+
+// 舟券種別に応じた結果桁数を返す
+function getResultCols() {
+  const ticket = document.getElementById('ticket-type') ? document.getElementById('ticket-type').value : '3連単';
+  if (ticket === '単勝') return 1;
+  if (['2連単','2連複','拡連複'].includes(ticket)) return 2;
+  return 3;
+}
+
+// Parse result input flexibly - ticket-aware:
+// 3連単/3連複: "1-3-5" / "135" / "１２３" など3桁
+// 2連単/2連複/拡連複: "1-2" / "12" / "１２" など2桁
+// 単勝: "1" / "１" など1桁
+function parseResult(val) {
+  if (!val) return null;
+  // 全角→半角、セパレータ正規化
+  let norm = val
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[ー－―ｰ]/g, '-')
+    .replace(/[　 ]+/g, ' ')
+    .trim();
+
+  const cols = getResultCols();
+  let parts;
+
+  // セパレータなしの連続数字
+  const noSep = norm.replace(/[^0-9]/g, '');
+  if (noSep.length === cols && /^[1-6]+$/.test(noSep)) {
+    parts = noSep.split('').map(Number);
+  } else {
+    // セパレータ区切り
+    parts = norm.split(/[^0-9]+/).map(Number).filter(n => !isNaN(n) && n >= 1 && n <= 6);
+  }
+
+  if (parts.length === cols && parts.every(n => n >= 1 && n <= 6)) return parts;
+  return null;
+}
+
+function autoCheck() {
+  const val = document.getElementById('result-input').value;
+  const inp = document.getElementById('result-input');
+  inp.className = '';
+  if (!val.trim()) return;
+  const parts = parseResult(val);
+  if (!parts) return;
+  const combos = getActiveCombos();
+  const ticket = document.getElementById('ticket-type').value;
+  const hit = comboHit(combos, parts, ticket);
+  inp.className = hit ? 'hit' : 'miss';
+}
+
+// 的中判定（舟券種別考慮）
+function comboHit(combos, parts, ticket) {
+  if (!parts || !combos.length) return false;
+  if (ticket === '単勝') return combos.some(c => c[0] === parts[0]);
+  if (ticket === '2連単') return combos.some(c => c[0]===parts[0] && c[1]===parts[1]);
+  if (ticket === '2連複' || ticket === '拡連複') {
+    return combos.some(c => {
+      const cs = [...c].sort((a,b)=>a-b); const ps = [...parts].sort((a,b)=>a-b);
+      return cs[0]===ps[0] && cs[1]===ps[1];
+    });
+  }
+  if (ticket === '3連複') {
+    return combos.some(c => {
+      const cs = [...c].sort((a,b)=>a-b); const ps = [...parts].sort((a,b)=>a-b);
+      return cs[0]===ps[0] && cs[1]===ps[1] && cs[2]===ps[2];
+    });
+  }
+  return combos.some(c => c[0]===parts[0] && c[1]===parts[1] && c[2]===parts[2]);
+}
+
+function addEntry() {
+  const venue = document.getElementById('venue').value;
+  const race = document.getElementById('race-num').value;
+  if (!venue || !race) { toast('競艇場とレース番号を選択してください'); return; }
+  const combos = getActiveCombos();
+  if (!combos.length) { toast('フォーメーションを選択してください'); return; }
+  const unit = betMode === 'uniform' ? (parseInt(document.getElementById('unit-bet').value) || 100) : 100;
+  const totalBet = betMode === 'uniform' ? unit * combos.length : getIndividualTotal();
+  const individualBets = betMode === 'individual' ? getIndividualBets() : null;
+  const resultStr = document.getElementById('result-input').value.trim();
+  const odds = normalizeOdds(document.getElementById('odds-input').value);
+  let status = 'pending', payout = 0;
+  if (resultStr) {
+    const parts = parseResult(resultStr);
+    const ticket = document.getElementById('ticket-type').value;
+    const hit = parts && comboHit(combos, parts, ticket);
+    status = hit ? 'win' : 'lose';
+    payout = hit && odds ? Math.floor(Math.round(odds * unit * 10) / 10) : 0;
+  }
+  const f = id => document.getElementById(id).value;
+  const selBk = document.querySelector('#buykata-group .buykata-chip.sel');
+  entries.unshift({
+    id: Date.now(), date: f('race-date') || new Date().toLocaleDateString('ja-JP'),
+    venue, race, raceType: f('race-type'), ticketType: f('ticket-type'),
+    formation: getSel('f1').join('') + '→' + getSel('f2').join('') + '→' + getSel('f3').join(''),
+    unitBet: unit, totalBet, individualBets, result: resultStr, odds, payout,
+    buykata: selBk ? selBk.dataset.val : '',
+    strategyMemo: f('strategy-memo'),
+    memo: f('memo-input'), status
+  });
+  save(); clearForm(); updateHeader(); toast('保存しました');
+}
+
+function clearForm() {
+  ['venue','race-num','result-input','odds-input','payout-input','memo-input','strategy-memo'].forEach(id => document.getElementById(id).value = '');
+  document.querySelectorAll('#buykata-group .buykata-chip').forEach(c=>c.classList.remove('sel'));
+  document.getElementById('result-input').className = '';
+  document.getElementById('payout-hint').classList.remove('visible');
+  document.querySelectorAll('.chk-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('combo-count').textContent = '0 点';
+  document.getElementById('total-bet').value = '';
+  setBetMode('uniform');
+  onTicketChange();
+}
+
+// List
+function setFilter(mode, el) {
+  filterMode = mode;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderList();
+}
+function applyDateFilter() {
+  filterDate = document.getElementById('filter-date').value;
+  const btn = document.getElementById('date-clear-btn');
+  btn.classList.toggle('active', !!filterDate);
+  renderList();
+}
+function clearDateFilter() {
+  filterDate = '';
+  document.getElementById('filter-date').value = '';
+  document.getElementById('date-clear-btn').classList.remove('active');
+  renderList();
+}
+function normalizeDate(d) {
+  // Normalize Japanese locale dates like 2025/6/16 → 2025-06-16 for comparison
+  if (!d) return '';
+  return d.replace(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/, (_,y,m,dd)=>`${y}-${m.padStart(2,'0')}-${dd.padStart(2,'0')}`);
+}
+function renderList() {
+  let list = filterMode === 'all' ? entries : entries.filter(e => e.status === filterMode);
+  if (filterDate) list = list.filter(e => normalizeDate(e.date) === filterDate);
+  const el = document.getElementById('race-list');
+  const empty = document.getElementById('empty-state');
+  if (!list.length) { el.innerHTML = ''; empty.style.display = 'block'; }
+  else {
+    empty.style.display = 'none';
+    // Group by date
+    const grouped = {};
+    list.forEach(e => { const d = e.date || '不明'; if (!grouped[d]) grouped[d] = []; grouped[d].push(e); });
+    const sortedDates = Object.keys(grouped).sort((a,b) => normalizeDate(b).localeCompare(normalizeDate(a)));
+    el.innerHTML = sortedDates.map(date => {
+      const dayEntries = grouped[date];
+      const dayInvest = dayEntries.reduce((a,e)=>a+e.totalBet,0);
+      const dayRet = dayEntries.filter(e=>e.status==='win').reduce((a,e)=>a+e.payout,0);
+      const dayProfit = dayRet - dayInvest;
+      const dayWin = dayEntries.filter(e=>e.status==='win').length;
+      const dayDecided = dayEntries.filter(e=>e.status!=='pending').length;
+      const pc = dayProfit>=0 ? 'var(--green)' : 'var(--red)';
+      const dayHeader = `<div class="day-group-header">
+        <span class="day-group-date">📅 ${date}</span>
+        <div class="day-group-summary">
+          <span>${dayEntries.length}R</span>
+          <span>的中 <b>${dayWin}/${dayDecided}</b></span>
+          <span style="color:${pc};font-weight:700">${dayProfit>=0?'+':''}${dayProfit.toLocaleString()}円</span>
+        </div>
+      </div>`;
+      const items = dayEntries.map((e) => {
+        const profit = e.payout - e.totalBet;
+        const idx = entries.indexOf(e);
+        const bkBadge = e.buykata ? (()=>{const c={'本命':'#2A6010','1着ずらし':'#1A48A0','2着ずらし':'#1565A8','穴':'#9C4A0A','ココモ':'#0E7490','ココモ':'#0E7490','その他':'#5B3FA0'}[e.buykata]||'#666';const bg={'本命':'#EAF3DE','1着ずらし':'#EAF0FC','2着ずらし':'#EDF4FB','穴':'#FEF0E6','ココモ':'#E0F5FA','ココモ':'#E0F5FA','その他':'#F3F0FA'}[e.buykata]||'#eee';return`<span style="display:inline-block;padding:1px 7px;border-radius:20px;font-size:10px;font-weight:700;margin-left:4px;background:${bg};color:${c}">${e.buykata}</span>`;})() : '';
+        return `<div class="race-item ${e.status}" onclick="openSheet(${idx})">
+          <div class="race-item-top">
+            <div>
+              <div class="race-item-title">${e.venue} ${e.race} <span style="font-weight:400;font-size:12px;color:var(--text2)">${e.raceType}</span>${bkBadge}</div>
+              <div class="race-item-sub">${e.formation}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+              <span class="tag ${e.status}">${e.status==='win'?'的中':e.status==='lose'?'外れ':'未入力'}</span>
+            </div>
+          </div>
+          <div class="race-item-nums">
+            <div class="race-num-item"><div class="race-num-label">投資</div><div class="race-num-val">¥${e.totalBet.toLocaleString()}</div></div>
+            ${e.odds ? `<div class="race-num-item"><div class="race-num-label">オッズ</div><div class="race-num-val">${e.odds}倍</div></div>` : ''}
+            ${e.payout ? `<div class="race-num-item"><div class="race-num-label">回収</div><div class="race-num-val">¥${e.payout.toLocaleString()}</div></div>` : ''}
+            ${e.status!=='pending' ? `<div class="race-num-item"><div class="race-num-label">収支</div><div class="race-num-val ${profit>=0?'profit-pos':'profit-neg'}">${profit>=0?'+':''}${profit.toLocaleString()}円</div></div>` : ''}
+          </div>
+          <div class="race-item-actions">
+            <button class="btn btn-sm btn-edit-sm" onclick="event.stopPropagation();openSheet(${idx})">✏️ 編集</button>
+            <button class="btn btn-sm btn-danger-sm" onclick="event.stopPropagation();delEntry(${idx})">🗑 削除</button>
+          </div>
+        </div>`;
+      }).join('');
+      return dayHeader + items;
+    }).join('');
+  }
+  const invest = entries.reduce((a,e)=>a+e.totalBet,0);
+  const ret = entries.filter(e=>e.status==='win').reduce((a,e)=>a+e.payout,0);
+  const profit = ret - invest;
+  const roi = invest ? (ret/invest*100).toFixed(1) : 0;
+  const pe = document.getElementById('ls-profit');
+  pe.textContent = (profit>=0?'+':'') + profit.toLocaleString() + '円';
+  pe.className = 'metric-val sm ' + (profit>0?'pos':profit<0?'neg':'neu');
+  const re = document.getElementById('ls-roi');
+  re.textContent = roi + '%';
+  re.className = 'metric-val sm ' + (parseFloat(roi)>=100?'pos':parseFloat(roi)<100?'neg':'neu');
+}
+let pendingDelIdx = -1;
+let pendingDelType = '';
+
+function delEntry(idx) {
+  pendingDelIdx = idx;
+  pendingDelType = 'list';
+  const e = entries[idx];
+  document.getElementById('del-confirm-msg').textContent = e.venue + ' ' + e.race + ' を削除';
+  document.getElementById('del-confirm').classList.add('open');
+}
+function cancelDel() {
+  document.getElementById('del-confirm').classList.remove('open');
+  pendingDelIdx = -1;
+  pendingDelType = '';
+}
+function executeDel() {
+  document.getElementById('del-confirm').classList.remove('open');
+  if (pendingDelType === 'list' && pendingDelIdx >= 0) {
+    entries.splice(pendingDelIdx, 1);
+    save(); renderList(); renderChart(); updateHeader(); toast('削除しました');
+  } else if (pendingDelType === 'sheet' && pendingDelIdx >= 0) {
+    entries.splice(pendingDelIdx, 1);
+    save(); closeSheet(); renderList(); renderChart(); updateHeader(); toast('削除しました');
+  } else if (pendingDelType === 'all') {
+    entries = []; save(); renderAnalysis(); updateHeader(); toast('全データを削除しました');
+  }
+  pendingDelIdx = -1;
+  pendingDelType = '';
+}
+
+// ===== EDIT SHEET =====
+let editingIdx = -1;
+
+// Build sheet formation buttons once
+(function() {
+  ['e-f1','e-f2','e-f3'].forEach(id => {
+    const el = document.getElementById(id);
+    for (let i = 1; i <= 6; i++) {
+      const b = document.createElement('div');
+      b.className = 'sheet-chk-btn'; b.textContent = i; b.dataset.val = i;
+      b.addEventListener('click', () => { b.classList.toggle('sel'); updateSheetCombos(); });
+      el.appendChild(b);
+    }
+  });
+})();
+
+function getSheetSel(id) {
+  return [...document.querySelectorAll('#' + id + ' .sheet-chk-btn.sel')].map(b => +b.dataset.val);
+}
+function getSheetCombos() {
+  const ticket = document.getElementById('e-ticket').value;
+  const cols = TICKET_COLS[ticket] || 3;
+  const a = getSheetSel('e-f1');
+  if (cols === 1) return a.map(x => [x]);
+  const b = getSheetSel('e-f2');
+  if (cols === 2) {
+    const out = [];
+    const isRen = ticket === '2連複' || ticket === '拡連複';
+    for (const x of a) for (const y of b) {
+      if (x === y) continue;
+      if (isRen) { const key = [x,y].sort().join('-'); if (!out.find(c=>c.join('-')===key)) out.push([Math.min(x,y),Math.max(x,y)]); }
+      else out.push([x,y]);
+    }
+    return out;
+  }
+  const c = getSheetSel('e-f3');
+  const is3Ren = ticket === '3連複';
+  const out = [];
+  for (const x of a) for (const y of b) for (const z of c) {
+    if (x===y||y===z||x===z) continue;
+    if (is3Ren) { const key = [x,y,z].sort().join('-'); if (!out.find(cc=>cc.sort().join('-')===key)) out.push([x,y,z].sort()); }
+    else out.push([x,y,z]);
+  }
+  return out;
+}
+function onSheetTicketChange() {
+  const ticket = document.getElementById('e-ticket').value;
+  const cols = TICKET_COLS[ticket] || 3;
+  const labels = TICKET_LABELS[ticket] || ['1着','2着','3着'];
+  [1,2,3].forEach(i => {
+    const wrap = document.getElementById('e-fw' + i);
+    const lbl = document.getElementById('e-flabel' + i);
+    if (wrap) wrap.classList.toggle('hidden', i > cols);
+    if (lbl && labels[i-1]) lbl.textContent = labels[i-1];
+    if (i > cols) {
+      document.querySelectorAll('#e-f' + i + ' .sheet-chk-btn').forEach(b => b.classList.remove('sel'));
+    }
+  });
+  // 結果入力のプレースホルダーも更新
+  const placeholders = {'3連単':'例: 1-3-5','3連複':'例: 1-3-5','2連単':'例: 1-2','2連複':'例: 1-2','拡連複':'例: 1-2','単勝':'例: 1'};
+  const ri = document.getElementById('e-result');
+  if (ri) ri.placeholder = placeholders[ticket] || '例: 1-3-5';
+  updateSheetCombos();
+}
+
+let sheetBetMode = 'uniform';
+
+function setSheetBetMode(mode) {
+  sheetBetMode = mode;
+  document.getElementById('e-mode-uniform').classList.toggle('active', mode === 'uniform');
+  document.getElementById('e-mode-individual').classList.toggle('active', mode === 'individual');
+  document.getElementById('e-uniform-bet-area').style.display = mode === 'uniform' ? '' : 'none';
+  document.getElementById('e-individual-bet-area').style.display = mode === 'individual' ? '' : 'none';
+  updateSheetCombos();
+}
+
+function renderSheetIndividualBets(combos) {
+  const list = document.getElementById('e-individual-bets-list');
+  const prevVals = {};
+  list.querySelectorAll('.bet-row').forEach(row => {
+    prevVals[row.dataset.combo] = row.querySelector('input').value;
+  });
+  const ticket = document.getElementById('e-ticket').value;
+  list.innerHTML = combos.map(c => {
+    const cols = TICKET_COLS[ticket] || 3;
+    const key = c.slice(0, cols).join('-');
+    const prev = prevVals[key] || '100';
+    return `<div class="bet-row" data-combo="${key}">
+      <span class="bet-row-combo">${key}</span>
+      <input type="number" value="${prev}" min="100" step="100" inputmode="numeric" onchange="calcSheetIndividualTotal()">
+      <span class="bet-row-unit">円</span>
+    </div>`;
+  }).join('');
+  calcSheetIndividualTotal();
+}
+
+function calcSheetIndividualTotal() {
+  const inputs = document.querySelectorAll('#e-individual-bets-list .bet-row input');
+  const total = [...inputs].reduce((s, i) => s + (parseInt(i.value) || 0), 0);
+  document.getElementById('e-individual-total').textContent = '¥' + total.toLocaleString();
+}
+
+function getSheetIndividualBets() {
+  const bets = {};
+  document.querySelectorAll('#e-individual-bets-list .bet-row').forEach(row => {
+    bets[row.dataset.combo] = parseInt(row.querySelector('input').value) || 100;
+  });
+  return bets;
+}
+
+function getSheetIndividualTotal() {
+  return [...document.querySelectorAll('#e-individual-bets-list .bet-row input')]
+    .reduce((s, i) => s + (parseInt(i.value) || 0), 0);
+}
+
+function updateSheetCombos() {
+  const combos = getSheetCombos();
+  document.getElementById('e-combo-count').textContent = combos.length + ' 点';
+  if (sheetBetMode === 'uniform') {
+    const unit = parseInt(document.getElementById('e-unit').value) || 100;
+    document.getElementById('e-total').value = unit * combos.length || '';
+  } else {
+    renderSheetIndividualBets(combos);
+  }
+  updateSheetPayout();
+}
+document.getElementById('e-unit').addEventListener('input', updateSheetCombos);
+document.getElementById('e-odds').addEventListener('input', updateSheetPayout);
+function updateSheetPayout() {
+  const odds = normalizeOdds(document.getElementById('e-odds').value);
+  const unit = parseInt(document.getElementById('e-unit').value) || 100;
+  document.getElementById('e-payout').value = odds ? Math.floor(Math.round(odds * unit * 10) / 10) : '';
+}
+
+function openSheet(idx) {
+  editingIdx = idx;
+  const e = entries[idx];
+  document.getElementById('sheet-title').textContent = e.venue + ' ' + e.race + ' を編集';
+  document.getElementById('e-date').value = e.date || '';
+  document.getElementById('e-venue').value = e.venue;
+  document.getElementById('e-race').value = e.race;
+  document.getElementById('e-type').value = e.raceType;
+  document.getElementById('e-ticket').value = e.ticketType;
+  // 金額モードを復元
+  const hasIndividual = e.individualBets && Object.keys(e.individualBets).length > 0;
+  setSheetBetMode(hasIndividual ? 'individual' : 'uniform');
+  document.getElementById('e-unit').value = e.unitBet || 100;
+  document.getElementById('e-result').value = e.result || '';
+  document.getElementById('e-odds').value = e.odds || '';
+  document.getElementById('e-payout').value = e.payout || '';
+  document.getElementById('e-memo').value = e.memo || '';
+  document.getElementById('e-strategy-memo').value = e.strategyMemo || '';
+  document.querySelectorAll('#e-buykata-group .buykata-chip').forEach(c=>{
+    c.classList.toggle('sel', c.dataset.val === (e.buykata||''));
+  });
+
+  // フォーメーション選択を全解除してから設定
+  document.querySelectorAll('.sheet-chk-btn').forEach(b => b.classList.remove('sel'));
+  if (e.formation) {
+    const parts = e.formation.split('→');
+    ['e-f1','e-f2','e-f3'].forEach((fid, fi) => {
+      const nums = (parts[fi] || '').split('').map(Number);
+      document.querySelectorAll('#' + fid + ' .sheet-chk-btn').forEach(b => {
+        if (nums.includes(+b.dataset.val)) b.classList.add('sel');
+      });
+    });
+  }
+  // 舟券種別に合わせて列表示を更新（フォーメーション設定後に呼ぶ）
+  onSheetTicketChange();
+  // 個別設定の場合、保存済みの金額を復元
+  if (hasIndividual && e.individualBets) {
+    setTimeout(() => {
+      document.querySelectorAll('#e-individual-bets-list .bet-row').forEach(row => {
+        const saved = e.individualBets[row.dataset.combo];
+        if (saved) row.querySelector('input').value = saved;
+      });
+      calcSheetIndividualTotal();
+    }, 50);
+  }
+
+  document.getElementById('sheet-overlay').classList.add('open');
+  document.getElementById('edit-sheet').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSheet() {
+  document.getElementById('sheet-overlay').classList.remove('open');
+  document.getElementById('edit-sheet').classList.remove('open');
+  document.body.style.overflow = '';
+  editingIdx = -1;
+}
+
+function sheetSave() {
+  if (editingIdx < 0) return;
+  const combos = getSheetCombos();
+  const unit = sheetBetMode === 'uniform' ? (parseInt(document.getElementById('e-unit').value) || 100) : 100;
+  const totalBet = sheetBetMode === 'uniform' ? unit * combos.length : getSheetIndividualTotal();
+  const individualBets = sheetBetMode === 'individual' ? getSheetIndividualBets() : null;
+  const resultStr = document.getElementById('e-result').value.trim();
+  const odds = normalizeOdds(document.getElementById('e-odds').value);
+  let status = 'pending', payout = 0;
+  if (resultStr) {
+    const parts = parseResult(resultStr);
+    const tk = document.getElementById('e-ticket').value;
+    const hit = parts && comboHit(combos, parts, tk);
+    status = hit ? 'win' : 'lose';
+    payout = hit && odds ? Math.floor(Math.round(odds * unit * 10) / 10) : 0;
+  }
+  const formation = getSheetSel('e-f1').join('') + '→' + getSheetSel('e-f2').join('') + '→' + getSheetSel('e-f3').join('');
+  entries[editingIdx] = {
+    ...entries[editingIdx],
+    date: document.getElementById('e-date').value,
+    venue: document.getElementById('e-venue').value,
+    race: document.getElementById('e-race').value,
+    raceType: document.getElementById('e-type').value,
+    ticketType: document.getElementById('e-ticket').value,
+    formation, unitBet: unit, totalBet, individualBets, result: resultStr, odds, payout,
+    buykata: (document.querySelector('#e-buykata-group .buykata-chip.sel')||{}).dataset?.val || '',
+    strategyMemo: document.getElementById('e-strategy-memo').value,
+    memo: document.getElementById('e-memo').value, status
+  };
+  save(); closeSheet(); renderList(); renderChart(); updateHeader(); toast('更新しました');
+}
+
+function sheetDelete() {
+  if (editingIdx < 0) return;
+  pendingDelIdx = editingIdx;
+  pendingDelType = 'sheet';
+  const e = entries[editingIdx];
+  document.getElementById('del-confirm-msg').textContent = e.venue + ' ' + e.race + ' を削除';
+  document.getElementById('del-confirm').classList.add('open');
+}
+
+// Chart
+function renderChart() {
+  const ctx = document.getElementById('profitChart').getContext('2d');
+  const sorted = [...entries].reverse();
+  let cum = 0;
+  const data = sorted.map(e => {
+    if (e.status==='win') cum += (e.payout - e.totalBet);
+    else if (e.status==='lose') cum -= e.totalBet;
+    return cum;
+  });
+  const labels = sorted.map(e => e.venue + e.race);
+  if (profitChart) { profitChart.destroy(); profitChart = null; }
+  if (!data.length) return;
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  profitChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: [{
+      data, borderColor: '#1D9E75', backgroundColor: 'rgba(29,158,117,.12)',
+      fill: true, tension: 0.35, pointRadius: 3,
+      pointBackgroundColor: data.map(v => v>=0 ? '#1D9E75' : '#E24B4A')
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { grid: { color: dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.06)' }, ticks: { font:{size:10}, callback: v=>(v>=0?'+':'')+v.toLocaleString()+'円', color: dark?'#8fa88a':'#888' } },
+        x: { grid: { display:false }, ticks: { font:{size:9}, maxRotation:45, color: dark?'#8fa88a':'#888' } }
+      }
+    }
+  });
+}
+
+// Analysis
+function renderAnalysis() {
+  const won = entries.filter(e=>e.status==='win');
+  const decided = entries.filter(e=>e.status!=='pending');
+  const invest = entries.reduce((a,e)=>a+e.totalBet,0);
+  const ret = won.reduce((a,e)=>a+e.payout,0);
+  document.getElementById('an-invest').textContent = '¥'+invest.toLocaleString();
+  document.getElementById('an-return').textContent = '¥'+ret.toLocaleString();
+  document.getElementById('an-hitrate').textContent = decided.length ? ((won.length/decided.length)*100).toFixed(1)+'%' : '0%';
+  document.getElementById('an-avgodds').textContent = won.length ? (won.reduce((a,e)=>a+e.odds,0)/won.length).toFixed(1)+'倍' : '-';
+  document.getElementById('an-maxwin').textContent = won.length ? '¥'+Math.max(...won.map(e=>e.payout)).toLocaleString() : '¥0';
+  let streak=0; for(const e of entries){if(e.status==='lose')streak++;else break;}
+  document.getElementById('an-streak').textContent = streak+'連敗';
+
+  const vm={};
+  entries.forEach(e=>{if(!vm[e.venue])vm[e.venue]={i:0,r:0,n:0};vm[e.venue].i+=e.totalBet;if(e.status==='win')vm[e.venue].r+=e.payout;vm[e.venue].n++;});
+  document.getElementById('venue-stats').innerHTML = Object.entries(vm).sort((a,b)=>(b[1].r-b[1].i)-(a[1].r-a[1].i)).slice(0,8).map(([v,s])=>{
+    const p=s.r-s.i; const c=p>=0?'var(--green)':'var(--red)';
+    return `<div class="stat-row"><span class="stat-row-label">${v}（${s.n}R）</span><span class="stat-row-val" style="color:${c}">${p>=0?'+':''}${p.toLocaleString()}円</span></div>`;
+  }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
+
+  const tm={};
+  entries.forEach(e=>{if(!tm[e.ticketType])tm[e.ticketType]={i:0,r:0,n:0};tm[e.ticketType].i+=e.totalBet;if(e.status==='win')tm[e.ticketType].r+=e.payout;tm[e.ticketType].n++;});
+  document.getElementById('ticket-stats').innerHTML = Object.entries(tm).map(([t,s])=>{
+    const roi=s.i?(s.r/s.i*100).toFixed(0)+'%':'-%';
+    return `<div class="stat-row"><span class="stat-row-label">${t}（${s.n}R）</span><span class="stat-row-val">回収率 ${roi}</span></div>`;
+  }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
+
+  const mm={};
+  entries.forEach(e=>{const m=e.date?e.date.substring(0,7):'不明';if(!mm[m])mm[m]={i:0,r:0};mm[m].i+=e.totalBet;if(e.status==='win')mm[m].r+=e.payout;});
+  document.getElementById('monthly-stats').innerHTML = Object.entries(mm).sort().reverse().slice(0,6).map(([m,s])=>{
+    const p=s.r-s.i; const c=p>=0?'var(--green)':'var(--red)';
+    return `<div class="stat-row"><span class="stat-row-label">${m}</span><span class="stat-row-val" style="color:${c}">${p>=0?'+':''}${p.toLocaleString()}円</span></div>`;
+  }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
+
+  // 日別分析
+  const dm = {};
+  entries.forEach(e => {
+    const d = e.date || '不明';
+    if (!dm[d]) dm[d] = {i:0,r:0,n:0,win:0};
+    dm[d].i += e.totalBet;
+    if (e.status==='win') { dm[d].r += e.payout; dm[d].win++; }
+    if (e.status!=='pending') dm[d].n++;
+  });
+  const sortedDays = Object.keys(dm).sort((a,b)=>normalizeDate(b).localeCompare(normalizeDate(a)));
+  const recentDays = sortedDays.slice(0,30);
+
+  // Mini bar chart (recent 20 days, oldest→newest left to right)
+  const chartDays = recentDays.slice(0,20).reverse();
+  const profits = chartDays.map(d=>dm[d].r - dm[d].i);
+  const maxAbs = Math.max(1, ...profits.map(Math.abs));
+  const BAR_MAX = 60; // px
+  document.getElementById('daily-chart').innerHTML = chartDays.map((d,i)=>{
+    const p = profits[i];
+    const h = Math.round(Math.abs(p)/maxAbs*BAR_MAX);
+    const label = normalizeDate(d).slice(5); // MM-DD
+    const valStr = (p>=0?'+':'')+Math.round(p/1000)+'k';
+    const barHtml = p >= 0
+      ? `<div style="height:${BAR_MAX-h}px"></div><div class="daily-bar-pos" style="height:${h}px"></div><div class="daily-bar-zero"></div>`
+      : `<div style="height:${BAR_MAX}px"></div><div class="daily-bar-zero"></div><div class="daily-bar-neg" style="height:${h}px"></div>`;
+    return `<div class="daily-col">${barHtml}<div class="daily-col-label">${label}</div><div class="daily-col-val" style="color:${p>=0?'var(--green)':'var(--red)'}">${valStr}</div></div>`;
+  }).join('');
+
+  // Daily stats table
+  document.getElementById('daily-stats').innerHTML = recentDays.map(d => {
+    const s = dm[d]; const p = s.r-s.i;
+    const roi = s.i?(s.r/s.i*100).toFixed(0):'0';
+    return `<div class="stat-row">
+      <div>
+        <div style="font-size:13px;font-weight:700">${d}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${s.n}R 的中${s.win} 回収率${roi}%</div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:${p>=0?'var(--green)':'var(--red)'}">${p>=0?'+':''}${p.toLocaleString()}円</span>
+    </div>`;
+  }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
+
+  // 買い方別分析
+  const BK_ORDER = ['本命','1着ずらし','2着ずらし','穴','ココモ','その他'];
+  const BK_COLOR = {'本命':'#2A6010','1着ずらし':'#1A48A0','2着ずらし':'#1565A8','穴':'#9C4A0A','ココモ':'#0E7490','その他':'#5B3FA0'};
+  const bkm = {};
+  entries.forEach(e => {
+    const k = e.buykata || '未設定';
+    if (!bkm[k]) bkm[k] = {i:0,r:0,n:0,win:0};
+    bkm[k].i += e.totalBet;
+    if (e.status==='win') { bkm[k].r += e.payout; bkm[k].win++; }
+    if (e.status!=='pending') bkm[k].n++;
+  });
+  const maxRoi = Math.max(1, ...Object.values(bkm).map(s=>s.i?s.r/s.i*100:0));
+  const bkOrder = [...BK_ORDER.filter(k=>bkm[k]), ...Object.keys(bkm).filter(k=>!BK_ORDER.includes(k))];
+  document.getElementById('buykata-stats').innerHTML = bkOrder.length ? bkOrder.map(k => {
+    const s = bkm[k];
+    const roi = s.i ? (s.r/s.i*100).toFixed(1) : 0;
+    const hitrate = s.n ? (s.win/s.n*100).toFixed(1) : 0;
+    const profit = s.r - s.i;
+    const barW = s.i ? Math.min(100, s.r/s.i*100 / maxRoi * 100) : 0;
+    const color = BK_COLOR[k] || '#666';
+    return `<div class="bk-stat-row">
+      <div class="bk-stat-top">
+        <span class="bk-stat-label" style="color:${color}">${k}</span>
+        <span style="font-size:12px;font-weight:700;color:${profit>=0?'var(--green)':'var(--red)'}">${profit>=0?'+':''}${profit.toLocaleString()}円</span>
+      </div>
+      <div class="bk-stat-bar" style="width:${barW}%;background:${color};opacity:.7"></div>
+      <div class="bk-stat-nums" style="margin-top:5px">
+        <span><b>${s.n}</b>R</span>
+        <span>的中率 <b>${hitrate}%</b></span>
+        <span>回収率 <b>${roi}%</b></span>
+        <span>投資 <b>¥${s.i.toLocaleString()}</b></span>
+      </div>
+    </div>`;
+  }).join('') : '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
+}
+
+function updateHeader() {
+  const invest = entries.reduce((a,e)=>a+e.totalBet,0);
+  const ret = entries.filter(e=>e.status==='win').reduce((a,e)=>a+e.payout,0);
+  const profit = ret - invest;
+  const badge = document.getElementById('header-badge');
+  badge.textContent = (profit>=0?'+':'') + profit.toLocaleString() + '円';
+  badge.style.background = profit>0?'rgba(29,158,117,.35)':profit<0?'rgba(226,75,74,.35)':'rgba(255,255,255,.15)';
+  document.getElementById('header-sub').textContent = entries.length + 'レース記録済み';
+}
+
+function exportCSV() {
+  if (!entries.length) { toast('データがありません'); return; }
+  const h = '日付,競艇場,レース,グレード,舟券,フォーメーション,買い方,買い方メモ,1点金額,投資合計,オッズ,回収,収支,結果,メモ';
+  const rows = entries.map(e => [e.date,e.venue,e.race,e.raceType,e.ticketType,e.formation,e.buykata||'',('"'+(e.strategyMemo||'').replace(/"/g,'""')+'"'),e.unitBet,e.totalBet,e.odds||'',e.payout||'',e.status==='win'?e.payout-e.totalBet:e.status==='lose'?-e.totalBet:'',e.status,'"'+(e.memo||'').replace(/"/g,'""')+'"'].join(','));
+  const csv = '\uFEFF' + h + '\n' + rows.join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = 'boatrace_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  toast('CSVを出力しました');
+}
+
+function clearAll() {
+  pendingDelIdx = -1;
+  pendingDelType = 'all';
+  document.getElementById('del-confirm-msg').textContent = '全データを削除しますか？';
+  document.getElementById('del-confirm').classList.add('open');
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+
+// Init
+document.getElementById('race-date').value = new Date().toLocaleDateString('ja-JP');
+updateHeader();
+initSyncId();
+// Auto-start sync if previously connected
+if (localStorage.getItem('boat_sync_id') && window._firebaseReady) {
+  startRealtimeSync();
+}
+</script>
+</body>
+</html>

@@ -12,14 +12,12 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>ボートレース収支管理</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script type="module">
-// Firebase setup - loaded as module
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getFirestore, doc, setDoc, onSnapshot, collection, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-
-// ── USER CONFIG ────────────────────────────────────────────
-// Firestoreを使うには下記にあなたのFirebase設定を入力してください
-// https://console.firebase.google.com/ で無料プロジェクトを作成できます
+<!-- Firebase Compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// Firebase Config（固定）
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAv35i4MSksru9csqLBbtZvHEJbWfaVQGs",
   authDomain: "boat-d715f.firebaseapp.com",
@@ -29,19 +27,148 @@ const FIREBASE_CONFIG = {
   appId: "1:143618120714:web:8fe8f3548ada361d5053f3",
   measurementId: "G-JPB6Y4GNP0"
 };
-// ──────────────────────────────────────────────────────────
 
-window._firebaseReady = false;
-if (FIREBASE_CONFIG.apiKey) {
+let fbApp = null, fbAuth = null, fbDb = null, currentUser = null;
+let cloudPushTimer = null;
+let authTabMode = 'login';
+const SKIP_KEY = 'boat_auth_skip';
+
+function userDocRef(){
+  return fbDb.collection('boatrace').doc(currentUser.uid);
+}
+
+function initFirebase(){
   try {
-    const app = initializeApp(FIREBASE_CONFIG);
-    const db = getFirestore(app);
-    window._db = db;
-    window._firebaseReady = true;
-  } catch(e) {
-    console.warn('Firebase init failed:', e);
+    fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth = firebase.auth();
+    fbDb = firebase.firestore();
+    fbAuth.onAuthStateChanged(handleAuthChange);
+  } catch(e) { console.error('Firebase init error', e); }
+}
+
+function handleAuthChange(user){
+  if(user){
+    currentUser = user;
+    localStorage.removeItem(SKIP_KEY);
+    showApp();
+    updateAuthBadge();
+    userDocRef().get().then(doc=>{
+      if(doc.exists){
+        const remote = JSON.parse(doc.data().entries || '[]');
+        entries = mergeEntries(entries, remote);
+        localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
+      } else {
+        queueCloudPush();
+      }
+      renderList(); renderChart(); updateHeader();
+      if(document.getElementById('page-analysis').classList.contains('active')) renderAnalysis();
+    }).catch(e => console.error(e));
+  } else {
+    currentUser = null;
+    updateAuthBadge();
+    if(localStorage.getItem(SKIP_KEY) === '1'){
+      showApp();
+    } else {
+      showGate();
+    }
   }
 }
+
+function queueCloudPush(){
+  if(!currentUser) return;
+  clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(()=>{
+    userDocRef().set({
+      entries: JSON.stringify(entries),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(e => console.error(e));
+  }, 1200);
+}
+
+function doLogout(){
+  if(!confirm('ログアウトしますか？この端末のキャッシュも削除されます。')) return;
+  localStorage.removeItem('boat_pwa_v1');
+  localStorage.removeItem(SKIP_KEY);
+  fbAuth.signOut();
+}
+
+function showGate(){ 
+  document.getElementById('gate-root').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  renderGate();
+}
+function showApp(){ 
+  document.getElementById('gate-root').style.display = 'none';
+  document.getElementById('app').style.display = '';
+}
+
+function renderGate(errorMsg=''){
+  const card = document.getElementById('gate-card');
+  card.innerHTML = `
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:28px;margin-bottom:8px">🚤</div>
+      <div style="font-size:22px;font-weight:800;color:var(--text);margin-bottom:6px">競艇収支</div>
+      <div style="font-size:13px;color:var(--text2)">メールアドレスとパスワードでログインすると<br>複数端末でデータが同期されます</div>
+    </div>
+    <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+      <button id="gtab-login" style="flex:1;padding:11px;font-size:13px;font-weight:700;border:none;cursor:pointer;font-family:inherit;background:${authTabMode==='login'?'var(--green)':'var(--surface2)'};color:${authTabMode==='login'?'#fff':'var(--text2)'}" onclick="switchGateTab('login')">ログイン</button>
+      <button id="gtab-signup" style="flex:1;padding:11px;font-size:13px;font-weight:700;border:none;cursor:pointer;font-family:inherit;background:${authTabMode==='signup'?'var(--green)':'var(--surface2)'};color:${authTabMode==='signup'?'#fff':'var(--text2)'}" onclick="switchGateTab('signup')">新規登録</button>
+    </div>
+    ${errorMsg ? `<div style="font-size:12px;color:var(--red);margin-bottom:12px;padding:10px;background:rgba(226,75,74,.08);border-radius:8px">${errorMsg}</div>` : ''}
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px">メールアドレス</label>
+      <input id="g-email" type="email" inputmode="email" placeholder="you@example.com" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--surface2);color:var(--text);font-family:inherit">
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px">パスワード（6文字以上）</label>
+      <input id="g-password" type="password" placeholder="••••••••" style="width:100%;padding:12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:var(--surface2);color:var(--text);font-family:inherit">
+    </div>
+    <button id="g-submit" style="width:100%;padding:14px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:12px"
+      onclick="doGateAuth()">${authTabMode==='login'?'ログイン':'登録してはじめる'}</button>
+    <button style="width:100%;padding:11px;background:transparent;color:var(--text3);border:none;font-size:13px;cursor:pointer;font-family:inherit"
+      onclick="skipLogin()">ログインせずこの端末だけで使う</button>
+  `;
+  setTimeout(()=>{
+    const ei = document.getElementById('g-email');
+    if(ei) ei.addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('g-password').focus(); });
+    const pi = document.getElementById('g-password');
+    if(pi) pi.addEventListener('keydown', e=>{ if(e.key==='Enter') doGateAuth(); });
+  }, 0);
+}
+
+function switchGateTab(mode){
+  authTabMode = mode;
+  renderGate();
+}
+
+function doGateAuth(){
+  const email = document.getElementById('g-email').value.trim();
+  const pw = document.getElementById('g-password').value;
+  if(!email || pw.length < 6){ renderGate('メールアドレスと6文字以上のパスワードを入力してください'); return; }
+  const btn = document.getElementById('g-submit');
+  btn.textContent = '処理中...'; btn.disabled = true;
+  const action = authTabMode === 'login'
+    ? fbAuth.signInWithEmailAndPassword(email, pw)
+    : fbAuth.createUserWithEmailAndPassword(email, pw);
+  action.catch(err=>{
+    const msgs = {
+      'auth/invalid-email':'メールアドレスの形式が正しくありません',
+      'auth/user-not-found':'アカウントが見つかりません。新規登録してください',
+      'auth/wrong-password':'パスワードが違います',
+      'auth/email-already-in-use':'このメールアドレスは既に登録されています',
+      'auth/weak-password':'パスワードは6文字以上にしてください',
+      'auth/invalid-credential':'メールアドレスまたはパスワードが違います',
+    };
+    renderGate(msgs[err.code] || err.message);
+  });
+}
+
+function skipLogin(){
+  localStorage.setItem(SKIP_KEY, '1');
+  showApp();
+}
+
+initFirebase();
 </script>
 <style>
 :root {
@@ -527,7 +654,12 @@ input.miss { border-color: var(--red) !important; }
 </style>
 </head>
 <body>
-<div id="app">
+<!-- ゲート画面（ログイン） -->
+<div id="gate-root" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto">
+  <div id="gate-card" style="background:var(--surface);border-radius:20px;padding:32px 24px;width:100%;max-width:400px;box-shadow:0 8px 40px rgba(0,0,0,.15)"></div>
+</div>
+
+<div id="app" style="display:none">
   <div class="header">
     <div>
       <div class="header-title">競艇収支</div>
@@ -537,7 +669,7 @@ input.miss { border-color: var(--red) !important; }
       <div class="header-badge" id="header-badge">¥0</div>
       <div class="sync-badge" onclick="openSyncPanel()" id="sync-badge">
         <span class="sync-dot" id="sync-dot"></span>
-        <span id="sync-label">同期オフ</span>
+        <span id="sync-label">未ログイン</span>
       </div>
     </div>
   </div>
@@ -875,40 +1007,39 @@ input.miss { border-color: var(--red) !important; }
   </div>
 </div>
 
-<!-- Sync setup panel -->
+<!-- Auth panel -->
 <div class="sync-panel" id="sync-panel" onclick="closeSyncPanel(event)">
   <div class="sync-panel-inner" onclick="event.stopPropagation()">
     <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px"></div>
-    <div class="sync-panel-title">📡 端末間リアルタイム同期</div>
-    <div class="sync-panel-sub">同じ「同期ID」を使うとスマホとPCのデータがリアルタイムで統合されます。</div>
+    <div class="sync-panel-title" id="auth-panel-title">🔑 ログイン / 新規登録</div>
 
-    <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:6px">あなたの同期ID</div>
-    <div class="sync-id-box" id="my-sync-id">-</div>
-    <div style="display:flex;gap:8px;margin-bottom:16px">
-      <button class="btn btn-ghost" style="flex:1;font-size:13px;padding:10px" onclick="copySyncId()">IDをコピー</button>
-      <button class="btn btn-ghost" style="flex:1;font-size:13px;padding:10px;color:var(--red)" onclick="resetSyncId()">IDをリセット</button>
+    <!-- ログイン済み表示 -->
+    <div id="auth-loggedin" style="display:none">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:6px">ログイン中：</div>
+      <div id="auth-email-disp" style="font-size:14px;font-weight:700;margin-bottom:16px;word-break:break-all"></div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:16px">このアカウントのデータは全端末でリアルタイム同期されます。</div>
+      <button class="btn btn-ghost" style="width:100%;color:var(--red);margin-bottom:8px" onclick="doLogout()">ログアウト</button>
+      <button class="btn btn-ghost" style="width:100%" onclick="closeSyncPanel()">閉じる</button>
     </div>
 
-    <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:8px">別の端末のIDを入力して同期</div>
-    <div class="sync-input-row">
-      <input type="text" id="sync-id-input" placeholder="例: ABC123XY" style="text-transform:uppercase">
-      <button class="btn btn-primary" style="width:auto;padding:11px 16px;font-size:14px" onclick="applySyncId()">接続</button>
+    <!-- 未ログイン表示 -->
+    <div id="auth-loginform">
+      <div style="display:flex;gap:0;margin-bottom:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <button id="tab-login" style="flex:1;padding:10px;font-size:13px;font-weight:700;border:none;cursor:pointer;background:var(--green);color:#fff" onclick="switchAuthTab('login')">ログイン</button>
+        <button id="tab-signup" style="flex:1;padding:10px;font-size:13px;font-weight:700;border:none;cursor:pointer;background:var(--surface2);color:var(--text2)" onclick="switchAuthTab('signup')">新規登録</button>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label class="field-label">メールアドレス</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" inputmode="email">
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label class="field-label">パスワード（6文字以上）</label>
+        <input type="password" id="auth-password" placeholder="••••••••">
+      </div>
+      <div id="auth-error" style="font-size:12px;color:var(--red);min-height:16px;margin-bottom:10px"></div>
+      <button class="btn btn-primary" id="auth-submit-btn" style="width:100%;margin-bottom:10px" onclick="doAuth()">ログイン</button>
+      <button class="btn btn-ghost" style="width:100%" onclick="closeSyncPanel()">キャンセル</button>
     </div>
-
-    <div class="sync-steps">
-      <b>使い方：</b><br>
-      ① スマホでこの画面を開き「IDをコピー」<br>
-      ② PCでIDを入力欄に貼り付けて「接続」<br>
-      ③ 以降どちらで入力しても自動で同期されます
-    </div>
-
-    <div id="sync-status-msg" style="font-size:13px;color:var(--green);text-align:center;min-height:20px;margin-bottom:10px"></div>
-
-    <div class="sync-notice">
-      ※ 同期にはFirebaseの設定が必要です。HTMLファイル内の FIREBASE_CONFIG にご自身のFirebaseプロジェクト情報を入力してください。設定なしの場合はこの端末内のみで動作します。
-    </div>
-
-    <button class="btn btn-ghost" style="margin-top:14px" onclick="closeSyncPanel()">閉じる</button>
   </div>
 </div>
 
@@ -931,151 +1062,81 @@ let deferredPrompt = null;
 
 function save() {
   localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
-  syncToCloud();
+  queueCloudPush();
 }
 
-// ===== SYNC ENGINE =====
-let syncId = localStorage.getItem('boat_sync_id') || '';
-let unsubscribeSync = null;
-let syncEnabled = false;
-let isSyncing = false;
-
-function generateId() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({length:8}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('');
-}
-
-function initSyncId() {
-  if (!syncId) {
-    syncId = generateId();
-    localStorage.setItem('boat_sync_id', syncId);
-  }
-  document.getElementById('my-sync-id').textContent = syncId;
-}
-
-function setSyncStatus(state, label) {
-  const dot = document.getElementById('sync-dot');
-  const lbl = document.getElementById('sync-label');
-  dot.className = 'sync-dot ' + state;
-  lbl.textContent = label;
-}
-
-async function syncToCloud() {
-  if (!syncEnabled || !window._firebaseReady || !window._db) return;
-  try {
-    const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    setSyncStatus('syncing', '同期中…');
-    isSyncing = true; // 自分の書き込みによるsnapshotを無視するフラグ
-    const localSnapshot = JSON.stringify(entries); // 書き込み時点のスナップショット
-    await setDoc(doc(window._db, 'boatrace', syncId), {
-      entries: localSnapshot,
-      updatedAt: Date.now()
-    });
-    setSyncStatus('ok', '同期済み ✓');
-    // 少し待ってからフラグを解除（onSnapshotが発火するのを待つ）
-    setTimeout(() => { isSyncing = false; }, 1500);
-  } catch(e) {
-    isSyncing = false;
-    setSyncStatus('err', '同期エラー');
-    console.warn('sync error', e);
-  }
-}
-
-async function startRealtimeSync() {
-  if (!window._firebaseReady || !window._db) {
-    setSyncStatus('err', 'Firebase未設定');
-    document.getElementById('sync-status-msg').textContent = 'Firebase設定が必要です';
-    return false;
-  }
-  if (unsubscribeSync) unsubscribeSync();
-  try {
-    const { doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    setSyncStatus('syncing', '接続中…');
-    unsubscribeSync = onSnapshot(doc(window._db, 'boatrace', syncId), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        const remote = JSON.parse(data.entries || '[]');
-        // 自分の書き込みによるsnapshotは無視（編集上書き防止）
-        if (isSyncing) {
-          setSyncStatus('ok', '同期済み ✓');
-          return;
-        }
-        // Merge: idをキーに、updatedAtが新しい方を優先
-        const merged = mergeEntries(entries, remote);
-        if (JSON.stringify(merged) !== JSON.stringify(entries)) {
-          entries = merged;
-          localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
-          renderList(); renderChart(); updateHeader();
-          if (document.getElementById('page-analysis').classList.contains('active')) renderAnalysis();
-        }
-        setSyncStatus('ok', '同期済み ✓');
-      } else {
-        // First time: push local data
-        syncToCloud();
-        setSyncStatus('ok', '同期済み ✓');
-      }
-    }, (err) => {
-      setSyncStatus('err', '同期エラー');
-      console.warn('snapshot error', err);
-    });
-    syncEnabled = true;
-    return true;
-  } catch(e) {
-    setSyncStatus('err', '同期エラー');
-    return false;
-  }
-}
-
+// ===== AUTH-BASED SYNC =====
 function mergeEntries(local, remote) {
   const map = {};
-  // まずリモートを入れる
   remote.forEach(e => { map[e.id] = e; });
-  // ローカルで上書き（ローカルの方が常に最新）
-  local.forEach(e => { map[e.id] = e; });
+  local.forEach(e => { map[e.id] = e; }); // ローカル優先
   return Object.values(map).sort((a,b) => b.id - a.id);
 }
 
-function stopSync() {
-  if (unsubscribeSync) { unsubscribeSync(); unsubscribeSync = null; }
-  syncEnabled = false;
-  setSyncStatus('', '同期オフ');
+function updateAuthBadge() {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-label');
+  if(currentUser){
+    dot.className = 'sync-dot ok';
+    lbl.textContent = '同期済み ✓';
+  } else {
+    dot.className = 'sync-dot';
+    lbl.textContent = '未ログイン';
+  }
 }
 
-// Sync panel
+// Auth panel
 function openSyncPanel() {
-  initSyncId();
-  document.getElementById('sync-panel').classList.add('open');
+  if(currentUser){
+    // ログイン済み: ログアウトボタンのみ表示
+    const panel = document.getElementById('sync-panel');
+    panel.classList.add('open');
+    document.getElementById('auth-loggedin').style.display = '';
+    document.getElementById('auth-loginform').style.display = 'none';
+    document.getElementById('auth-email-disp').textContent = currentUser.email;
+    document.getElementById('auth-panel-title').textContent = '🔑 アカウント';
+  } else {
+    // 未ログイン: ゲート画面に戻る
+    showGate();
+  }
 }
 function closeSyncPanel(e) {
   if (e && e.target !== document.getElementById('sync-panel')) return;
   document.getElementById('sync-panel').classList.remove('open');
 }
-function copySyncId() {
-  navigator.clipboard.writeText(syncId).then(()=>toast('IDをコピーしました')).catch(()=>{
-    document.getElementById('sync-id-input').value = syncId;
-    toast('上の入力欄にIDが入りました');
-  });
+function switchAuthTab(mode){
+  authTabMode = mode;
+  document.getElementById('tab-login').style.background = mode==='login' ? 'var(--green)' : 'var(--surface2)';
+  document.getElementById('tab-login').style.color = mode==='login' ? '#fff' : 'var(--text2)';
+  document.getElementById('tab-signup').style.background = mode==='signup' ? 'var(--green)' : 'var(--surface2)';
+  document.getElementById('tab-signup').style.color = mode==='signup' ? '#fff' : 'var(--text2)';
+  document.getElementById('auth-submit-btn').textContent = mode==='login' ? 'ログイン' : '登録してはじめる';
+  document.getElementById('auth-error').textContent = '';
 }
-function resetSyncId() {
-  if (!window.confirm && true) {
-    syncId = generateId();
-    localStorage.setItem('boat_sync_id', syncId);
-    document.getElementById('my-sync-id').textContent = syncId;
-    stopSync(); startRealtimeSync();
-    toast('新しいIDを発行しました');
+function doAuth(){
+  const email = document.getElementById('auth-email').value.trim();
+  const pw = document.getElementById('auth-password').value;
+  if(!email || pw.length < 6){
+    document.getElementById('auth-error').textContent = 'メールアドレスと6文字以上のパスワードを入力してください';
     return;
   }
-}
-async function applySyncId() {
-  const input = document.getElementById('sync-id-input').value.trim().toUpperCase();
-  if (input.length < 6) { toast('IDを入力してください'); return; }
-  syncId = input;
-  localStorage.setItem('boat_sync_id', syncId);
-  document.getElementById('my-sync-id').textContent = syncId;
-  document.getElementById('sync-status-msg').textContent = '接続中…';
-  const ok = await startRealtimeSync();
-  document.getElementById('sync-status-msg').textContent = ok ? '✓ 同期を開始しました' : 'Firebase設定が必要です';
-  if (ok) setTimeout(()=>document.getElementById('sync-panel').classList.remove('open'), 1500);
+  const action = authTabMode === 'login'
+    ? fbAuth.signInWithEmailAndPassword(email, pw)
+    : fbAuth.createUserWithEmailAndPassword(email, pw);
+  action.then(()=>{
+    document.getElementById('sync-panel').classList.remove('open');
+    document.getElementById('auth-error').textContent = '';
+  }).catch(err=>{
+    const msgs = {
+      'auth/invalid-email':'メールアドレスの形式が正しくありません',
+      'auth/user-not-found':'アカウントが見つかりません',
+      'auth/wrong-password':'パスワードが違います',
+      'auth/email-already-in-use':'このメールアドレスは既に登録されています',
+      'auth/weak-password':'パスワードは6文字以上にしてください',
+      'auth/invalid-credential':'メールアドレスまたはパスワードが違います',
+    };
+    document.getElementById('auth-error').textContent = msgs[err.code] || err.message;
+  });
 }
 
 window.addEventListener('beforeinstallprompt', e => {
@@ -2041,11 +2102,7 @@ if ('serviceWorker' in navigator) {
 // Init
 document.getElementById('race-date').value = new Date().toLocaleDateString('ja-JP');
 updateHeader();
-initSyncId();
-// Auto-start sync if previously connected
-if (localStorage.getItem('boat_sync_id') && window._firebaseReady) {
-  startRealtimeSync();
-}
+updateAuthBadge();
 </script>
 </body>
 </html>

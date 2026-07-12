@@ -638,6 +638,38 @@ input.miss { border-color: var(--red) !important; }
 .f-col-wrap { transition: opacity .2s; }
 .f-col-wrap.hidden { opacity: 0.2; pointer-events: none; }
 
+/* 分析フィルタードロワー */
+.analysis-filter-sheet {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  background: rgba(0,0,0,.45); opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.analysis-filter-sheet.open { opacity: 1; pointer-events: auto; }
+.analysis-filter-inner {
+  background: var(--surface); border-radius: 20px 20px 0 0;
+  max-height: 85dvh; display: flex; flex-direction: column;
+  transform: translateY(100%); transition: transform .25s cubic-bezier(.32,1,.23,1);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.analysis-filter-sheet.open .analysis-filter-inner { transform: translateY(0); }
+.analysis-filter-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 16px 10px; border-bottom: 0.5px solid var(--border); flex-shrink: 0;
+}
+.analysis-filter-title { font-size: 15px; font-weight: 700; }
+.analysis-filter-close { background: none; border: none; font-size: 20px; color: var(--text2); cursor: pointer; padding: 4px 8px; }
+.analysis-filter-list { overflow-y: auto; flex: 1; padding: 8px 0; }
+.analysis-filter-list::-webkit-scrollbar { display: none; }
+.stat-drill-btn {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; background: none; border: none; cursor: pointer;
+  padding: 6px 12px; font-family: inherit; color: var(--text);
+  font-size: 13px; font-weight: 600; border-radius: 8px;
+  margin: 2px 8px; width: calc(100% - 16px);
+}
+.stat-drill-btn:active { background: var(--surface2); }
+.stat-drill-arrow { color: var(--text3); font-size: 14px; }
+
 /* Install banner */
 #install-banner {
   display: none; margin-bottom: 10px;
@@ -1053,6 +1085,17 @@ input.miss { border-color: var(--red) !important; }
   <div class="del-confirm-btns">
     <button class="btn btn-ghost" onclick="cancelDel()">キャンセル</button>
     <button class="btn" id="del-confirm-btn" style="background:var(--red);color:#fff" onclick="executeDel()">削除する</button>
+  </div>
+</div>
+
+<!-- 分析ドリルダウンシート -->
+<div class="analysis-filter-sheet" id="analysis-filter-sheet" onclick="closeAnalysisFilter(event)">
+  <div class="analysis-filter-inner" onclick="event.stopPropagation()">
+    <div class="analysis-filter-header">
+      <div class="analysis-filter-title" id="analysis-filter-title">詳細一覧</div>
+      <button class="analysis-filter-close" onclick="closeAnalysisFilter()">✕</button>
+    </div>
+    <div class="analysis-filter-list" id="analysis-filter-list"></div>
   </div>
 </div>
 
@@ -1989,21 +2032,39 @@ function renderAnalysis() {
   entries.forEach(e=>{if(!vm[e.venue])vm[e.venue]={i:0,r:0,n:0};vm[e.venue].i+=e.totalBet;if(e.status==='win')vm[e.venue].r+=e.payout;vm[e.venue].n++;});
   document.getElementById('venue-stats').innerHTML = Object.entries(vm).sort((a,b)=>(b[1].r-b[1].i)-(a[1].r-a[1].i)).slice(0,8).map(([v,s])=>{
     const p=s.r-s.i; const c=p>=0?'var(--green)':'var(--red)';
-    return `<div class="stat-row"><span class="stat-row-label">${v}（${s.n}R）</span><span class="stat-row-val" style="color:${c}">${p>=0?'+':''}${p.toLocaleString()}円</span></div>`;
+    return `<div class="stat-row" style="cursor:pointer" onclick="openAnalysisFilter('venue','${v}')">
+      <div><div style="font-size:13px;font-weight:700">${v}（${s.n}R）</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="stat-row-val" style="color:${c}">${p>=0?'+':''}${p.toLocaleString()}円</span>
+        <span style="color:var(--text3);font-size:13px">›</span>
+      </div>
+    </div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
 
   const tm={};
   entries.forEach(e=>{if(!tm[e.ticketType])tm[e.ticketType]={i:0,r:0,n:0};tm[e.ticketType].i+=e.totalBet;if(e.status==='win')tm[e.ticketType].r+=e.payout;tm[e.ticketType].n++;});
   document.getElementById('ticket-stats').innerHTML = Object.entries(tm).map(([t,s])=>{
     const roi=s.i?(s.r/s.i*100).toFixed(0)+'%':'-%';
-    return `<div class="stat-row"><span class="stat-row-label">${t}（${s.n}R）</span><span class="stat-row-val">回収率 ${roi}</span></div>`;
+    return `<div class="stat-row" style="cursor:pointer" onclick="openAnalysisFilter('ticket','${t}')">
+      <div><div style="font-size:13px;font-weight:700">${t}（${s.n}R）</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="stat-row-val">回収率 ${roi}</span>
+        <span style="color:var(--text3);font-size:13px">›</span>
+      </div>
+    </div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
 
   const mm={};
   entries.forEach(e=>{const m=e.date?e.date.substring(0,7):'不明';if(!mm[m])mm[m]={i:0,r:0};mm[m].i+=e.totalBet;if(e.status==='win')mm[m].r+=e.payout;});
   document.getElementById('monthly-stats').innerHTML = Object.entries(mm).sort().reverse().slice(0,6).map(([m,s])=>{
     const p=s.r-s.i; const c=p>=0?'var(--green)':'var(--red)';
-    return `<div class="stat-row"><span class="stat-row-label">${m}</span><span class="stat-row-val" style="color:${c}">${p>=0?'+':''}${p.toLocaleString()}円</span></div>`;
+    return `<div class="stat-row" style="cursor:pointer" onclick="openAnalysisFilter('month','${m}')">
+      <div><div style="font-size:13px;font-weight:700">${m}</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="stat-row-val" style="color:${c}">${p>=0?'+':''}${p.toLocaleString()}円</span>
+        <span style="color:var(--text3);font-size:13px">›</span>
+      </div>
+    </div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
 
   // 日別分析
@@ -2038,12 +2099,15 @@ function renderAnalysis() {
   document.getElementById('daily-stats').innerHTML = recentDays.map(d => {
     const s = dm[d]; const p = s.r-s.i;
     const roi = s.i?(s.r/s.i*100).toFixed(0):'0';
-    return `<div class="stat-row">
+    return `<div class="stat-row" style="cursor:pointer" onclick="openAnalysisFilter('date','${d}')">
       <div>
         <div style="font-size:13px;font-weight:700">${d}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">${s.n}R 的中${s.win} 回収率${roi}%</div>
       </div>
-      <span style="font-size:13px;font-weight:700;color:${p>=0?'var(--green)':'var(--red)'}">${p>=0?'+':''}${p.toLocaleString()}円</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;font-weight:700;color:${p>=0?'var(--green)':'var(--red)'}">${p>=0?'+':''}${p.toLocaleString()}円</span>
+        <span style="color:var(--text3);font-size:13px">›</span>
+      </div>
     </div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
 
@@ -2067,10 +2131,13 @@ function renderAnalysis() {
     const profit = s.r - s.i;
     const barW = s.i ? Math.min(100, s.r/s.i*100 / maxRoi * 100) : 0;
     const color = BK_COLOR[k] || '#666';
-    return `<div class="bk-stat-row">
+    return `<div class="bk-stat-row" style="cursor:pointer" onclick="openAnalysisFilter('buykata','${k}')">
       <div class="bk-stat-top">
         <span class="bk-stat-label" style="color:${color}">${k}</span>
-        <span style="font-size:12px;font-weight:700;color:${profit>=0?'var(--green)':'var(--red)'}">${profit>=0?'+':''}${profit.toLocaleString()}円</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px;font-weight:700;color:${profit>=0?'var(--green)':'var(--red)'}">${profit>=0?'+':''}${profit.toLocaleString()}円</span>
+          <span style="color:var(--text3);font-size:13px">›</span>
+        </div>
       </div>
       <div class="bk-stat-bar" style="width:${barW}%;background:${color};opacity:.7"></div>
       <div class="bk-stat-nums" style="margin-top:5px">
@@ -2081,6 +2148,77 @@ function renderAnalysis() {
       </div>
     </div>`;
   }).join('') : '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
+}
+
+// ===== 分析ドリルダウン =====
+function openAnalysisFilter(type, value) {
+  const titleMap = {
+    date: `📅 ${value} のレース`,
+    venue: `🏟 ${value} のレース`,
+    ticket: `🎫 ${value} のレース`,
+    month: `📆 ${value} のレース`,
+    buykata: `🏷 ${value} のレース`,
+  };
+  document.getElementById('analysis-filter-title').textContent = titleMap[type] || '詳細一覧';
+
+  let filtered = [];
+  if (type === 'date')    filtered = entries.filter(e => e.date === value);
+  if (type === 'venue')   filtered = entries.filter(e => e.venue === value);
+  if (type === 'ticket')  filtered = entries.filter(e => e.ticketType === value);
+  if (type === 'month')   filtered = entries.filter(e => e.date && e.date.substring(0,7) === value);
+  if (type === 'buykata') filtered = entries.filter(e => (e.buykata||'未設定') === value);
+
+  filtered = [...filtered].sort((a,b) => b.id - a.id);
+
+  const statusLabel = s => s==='win'?'✅ 的中':s==='lose'?'❌ 外れ':'⏳ 未入力';
+  const statusColor = s => s==='win'?'var(--green)':s==='lose'?'var(--red)':'var(--text3)';
+
+  const list = document.getElementById('analysis-filter-list');
+  if (!filtered.length) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3)">データなし</div>';
+  } else {
+    list.innerHTML = filtered.map(e => {
+      const profit = e.status==='win' ? e.payout - e.totalBet : -e.totalBet;
+      const profitColor = profit >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<div style="padding:12px 16px;border-bottom:0.5px solid var(--border);cursor:pointer;active:background:var(--surface2)"
+        onclick="openSheetFromAnalysis(${e.id})">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+          <div>
+            <span style="font-size:12px;font-weight:700;color:var(--text2)">${e.date||''} ${e.venue||''} ${e.race||''}R</span>
+            <span style="font-size:11px;color:var(--text3);margin-left:6px">${e.ticketType||''}</span>
+          </div>
+          <span style="font-size:12px;font-weight:700;color:${statusColor(e.status)}">${statusLabel(e.status)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <span style="font-size:11px;color:var(--text3)">${e.formation||''}</span>
+            ${e.buykata ? `<span style="font-size:11px;color:var(--text3);margin-left:6px">${e.buykata}</span>` : ''}
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;font-weight:700;color:${profitColor}">${profit>=0?'+':''}${profit.toLocaleString()}円</div>
+            <div style="font-size:10px;color:var(--text3)">投資¥${e.totalBet.toLocaleString()} ${e.odds?'オッズ'+e.odds+'倍':''}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('analysis-filter-sheet').classList.add('open');
+}
+
+function closeAnalysisFilter(e) {
+  if (e && e.target !== document.getElementById('analysis-filter-sheet')) return;
+  document.getElementById('analysis-filter-sheet').classList.remove('open');
+}
+
+function openSheetFromAnalysis(id) {
+  const idx = entries.findIndex(e => e.id === id);
+  if (idx < 0) return;
+  closeAnalysisFilter();
+  setTimeout(() => {
+    showPage('list');
+    openSheet(idx);
+  }, 200);
 }
 
 function updateHeader() {

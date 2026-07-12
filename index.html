@@ -555,6 +555,7 @@ input.miss { border-color: var(--red) !important; }
 .buykata-chip[data-val="本命"].sel   { background:#EAF3DE; color:#2A6010; border-color:#2A6010; }
 .buykata-chip[data-val="1着ずらし"].sel { background:#EAF0FC; color:#1A48A0; border-color:#1A48A0; }
 .buykata-chip[data-val="2着ずらし"].sel { background:#EDF4FB; color:#1565A8; border-color:#1565A8; }
+.buykata-chip[data-val="BOX"].sel    { background:#E0F2EE; color:#1E7A6E; border-color:#1E7A6E; }
 .buykata-chip[data-val="穴"].sel     { background:#FEF0E6; color:#9C4A0A; border-color:#9C4A0A; }
 .buykata-chip[data-val="ココモ"].sel  { background:#E0F5FA; color:#0E7490; border-color:#0E7490; }
 .buykata-chip[data-val="その他"].sel { background:#F3F0FA; color:#5B3FA0; border-color:#5B3FA0; }
@@ -841,6 +842,7 @@ input.miss { border-color: var(--red) !important; }
           <div class="buykata-chip" data-val="本命"     onclick="selectBuykata(this)">🏆 本命</div>
           <div class="buykata-chip" data-val="1着ずらし" onclick="selectBuykata(this)">↕️ 1着ずらし</div>
           <div class="buykata-chip" data-val="2着ずらし" onclick="selectBuykata(this)">↔️ 2着ずらし</div>
+          <div class="buykata-chip" data-val="BOX"      onclick="selectBuykata(this)">📦 BOX</div>
           <div class="buykata-chip" data-val="穴"       onclick="selectBuykata(this)">🎯 穴</div>
           <div class="buykata-chip" data-val="ココモ"   onclick="selectBuykata(this)">🔄 ココモ</div>
           <div class="buykata-chip" data-val="その他"   onclick="selectBuykata(this)">📝 その他</div>
@@ -1028,6 +1030,7 @@ input.miss { border-color: var(--red) !important; }
         <div class="buykata-chip sm" data-val="本命"     onclick="selectEBuykata(this)">🏆 本命</div>
         <div class="buykata-chip sm" data-val="1着ずらし" onclick="selectEBuykata(this)">↕️ 1着ずらし</div>
         <div class="buykata-chip sm" data-val="2着ずらし" onclick="selectEBuykata(this)">↔️ 2着ずらし</div>
+        <div class="buykata-chip sm" data-val="BOX"      onclick="selectEBuykata(this)">📦 BOX</div>
         <div class="buykata-chip sm" data-val="穴"       onclick="selectEBuykata(this)">🎯 穴</div>
         <div class="buykata-chip sm" data-val="ココモ"   onclick="selectEBuykata(this)">🔄 ココモ</div>
         <div class="buykata-chip sm" data-val="その他"   onclick="selectEBuykata(this)">📝 その他</div>
@@ -2112,8 +2115,8 @@ function renderAnalysis() {
   }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
 
   // 買い方別分析
-  const BK_ORDER = ['本命','1着ずらし','2着ずらし','穴','ココモ','その他'];
-  const BK_COLOR = {'本命':'#2A6010','1着ずらし':'#1A48A0','2着ずらし':'#1565A8','穴':'#9C4A0A','ココモ':'#0E7490','その他':'#5B3FA0'};
+  const BK_ORDER = ['本命','1着ずらし','2着ずらし','BOX','穴','ココモ','その他'];
+  const BK_COLOR = {'本命':'#2A6010','1着ずらし':'#1A48A0','2着ずらし':'#1565A8','BOX':'#1E7A6E','穴':'#9C4A0A','ココモ':'#0E7490','その他':'#5B3FA0'};
   const bkm = {};
   entries.forEach(e => {
     const k = e.buykata || '未設定';

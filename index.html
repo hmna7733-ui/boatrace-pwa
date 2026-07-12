@@ -667,9 +667,12 @@ input.miss { border-color: var(--red) !important; }
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
       <div class="header-badge" id="header-badge">¥0</div>
-      <div class="sync-badge" onclick="openSyncPanel()" id="sync-badge">
-        <span class="sync-dot" id="sync-dot"></span>
-        <span id="sync-label">未ログイン</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button id="force-upload-btn" onclick="forceUpload()" style="display:none;padding:4px 10px;font-size:11px;font-weight:700;background:var(--amber);color:#fff;border:none;border-radius:20px;cursor:pointer;font-family:inherit">↑ 上書き保存</button>
+        <div class="sync-badge" onclick="openSyncPanel()" id="sync-badge">
+          <span class="sync-dot" id="sync-dot"></span>
+          <span id="sync-label">未ログイン</span>
+        </div>
       </div>
     </div>
   </div>
@@ -1076,13 +1079,34 @@ function mergeEntries(local, remote) {
 function updateAuthBadge() {
   const dot = document.getElementById('sync-dot');
   const lbl = document.getElementById('sync-label');
+  const btn = document.getElementById('force-upload-btn');
   if(currentUser){
     dot.className = 'sync-dot ok';
     lbl.textContent = '同期済み ✓';
+    if(btn) btn.style.display = '';
   } else {
     dot.className = 'sync-dot';
     lbl.textContent = '未ログイン';
+    if(btn) btn.style.display = 'none';
   }
+}
+
+function forceUpload(){
+  if(!currentUser){ alert('先にログインしてください'); return; }
+  const btn = document.getElementById('force-upload-btn');
+  const orig = btn.textContent;
+  btn.textContent = '保存中...'; btn.disabled = true;
+  userDocRef().set({
+    entries: JSON.stringify(entries),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(()=>{
+    btn.textContent = '✓ 保存済み'; btn.style.background = 'var(--green)';
+    setTimeout(()=>{ btn.textContent = orig; btn.style.background = 'var(--amber)'; btn.disabled = false; }, 2000);
+  }).catch(e=>{
+    console.error(e);
+    btn.textContent = 'エラー'; btn.style.background = 'var(--red)';
+    setTimeout(()=>{ btn.textContent = orig; btn.style.background = 'var(--amber)'; btn.disabled = false; }, 2000);
+  });
 }
 
 // Auth panel

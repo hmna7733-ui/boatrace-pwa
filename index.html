@@ -1354,21 +1354,30 @@ function setBetMode(mode) {
   document.getElementById('mode-individual').classList.toggle('active', mode==='individual');
   document.getElementById('uniform-bet-area').style.display = mode==='uniform' ? '' : 'none';
   document.getElementById('individual-bet-area').style.display = mode==='individual' ? '' : 'none';
-  updateCombos();
+  if (mode === 'individual') {
+    renderIndividualBets(getActiveCombos(), false); // 切替時は1点金額でリセット
+    calcPayout();
+  } else {
+    updateCombos();
+  }
 }
 
-function renderIndividualBets(combos) {
+function renderIndividualBets(combos, keepPrev=true) {
   const list = document.getElementById('individual-bets-list');
   const prevVals = {};
-  list.querySelectorAll('.bet-row').forEach(row => {
-    prevVals[row.dataset.combo] = row.querySelector('input').value;
-  });
+  if (keepPrev) {
+    list.querySelectorAll('.bet-row').forEach(row => {
+      prevVals[row.dataset.combo] = row.querySelector('input').value;
+    });
+  }
+  // デフォルトは「1点の金額」欄の値を使う
+  const defaultUnit = parseInt(document.getElementById('unit-bet').value) || 100;
   list.innerHTML = combos.map(c => {
     const key = c.join('-');
-    const prev = prevVals[key] || '100';
+    const val = keepPrev && prevVals[key] ? prevVals[key] : defaultUnit;
     return `<div class="bet-row" data-combo="${key}">
       <span class="bet-row-combo">${getComboStr(c)}</span>
-      <input type="number" value="${prev}" min="100" step="100" inputmode="numeric" onchange="calcIndividualTotal()">
+      <input type="number" value="${val}" min="100" step="100" inputmode="numeric" onchange="calcIndividualTotal()">
       <span class="bet-row-unit">円</span>
     </div>`;
   }).join('');
@@ -1406,7 +1415,13 @@ function updateCombos() {
   calcPayout();
 }
 
-document.getElementById('unit-bet').addEventListener('input', updateCombos);
+document.getElementById('unit-bet').addEventListener('input', () => {
+  if (betMode === 'individual') {
+    renderIndividualBets(getActiveCombos(), false);
+  } else {
+    updateCombos();
+  }
+});
 document.getElementById('ticket-type').addEventListener('change', () => { onTicketChange(); updateResultPlaceholder(); });
 function updateResultPlaceholder() {
   const ticket = document.getElementById('ticket-type').value;
@@ -1673,7 +1688,10 @@ function renderList() {
               <div class="race-item-sub">${e.formation}</div>
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-              <span class="tag ${e.status}">${e.status==='win'?'的中':e.status==='lose'?'外れ':'未入力'}</span>
+              <div style="display:flex;align-items:center;gap:6px">
+                ${e.result ? `<span style="font-size:16px;font-weight:800;letter-spacing:1px;color:var(--text);font-family:'Courier New',monospace">${e.result}</span>` : ''}
+                <span class="tag ${e.status}">${e.status==='win'?'的中':e.status==='lose'?'外れ':'未入力'}</span>
+              </div>
             </div>
           </div>
           <div class="race-item-nums">
@@ -1805,23 +1823,31 @@ function setSheetBetMode(mode) {
   document.getElementById('e-mode-individual').classList.toggle('active', mode === 'individual');
   document.getElementById('e-uniform-bet-area').style.display = mode === 'uniform' ? '' : 'none';
   document.getElementById('e-individual-bet-area').style.display = mode === 'individual' ? '' : 'none';
-  updateSheetCombos();
+  if (mode === 'individual') {
+    renderSheetIndividualBets(getSheetCombos(), false); // 切替時はe-unitの金額でリセット
+    updateSheetPayout();
+  } else {
+    updateSheetCombos();
+  }
 }
 
-function renderSheetIndividualBets(combos) {
+function renderSheetIndividualBets(combos, keepPrev=true) {
   const list = document.getElementById('e-individual-bets-list');
   const prevVals = {};
-  list.querySelectorAll('.bet-row').forEach(row => {
-    prevVals[row.dataset.combo] = row.querySelector('input').value;
-  });
+  if (keepPrev) {
+    list.querySelectorAll('.bet-row').forEach(row => {
+      prevVals[row.dataset.combo] = row.querySelector('input').value;
+    });
+  }
+  const defaultUnit = parseInt(document.getElementById('e-unit').value) || 100;
   const ticket = document.getElementById('e-ticket').value;
   list.innerHTML = combos.map(c => {
     const cols = TICKET_COLS[ticket] || 3;
     const key = c.slice(0, cols).join('-');
-    const prev = prevVals[key] || '100';
+    const val = keepPrev && prevVals[key] ? prevVals[key] : defaultUnit;
     return `<div class="bet-row" data-combo="${key}">
       <span class="bet-row-combo">${key}</span>
-      <input type="number" value="${prev}" min="100" step="100" inputmode="numeric" onchange="calcSheetIndividualTotal()">
+      <input type="number" value="${val}" min="100" step="100" inputmode="numeric" onchange="calcSheetIndividualTotal()">
       <span class="bet-row-unit">円</span>
     </div>`;
   }).join('');

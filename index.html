@@ -1926,8 +1926,8 @@ function updateSheetCombos() {
   const combos = getSheetCombos();
   document.getElementById('e-combo-count').textContent = combos.length + ' 点';
   if (sheetBetMode === 'uniform') {
-    const unit = parseInt(document.getElementById('e-unit').value) || 100;
-    document.getElementById('e-total').value = unit * combos.length || '';
+    const unit = parseInt(document.getElementById('e-unit').value) || 0;
+    document.getElementById('e-total').value = unit * combos.length;
   } else {
     renderSheetIndividualBets(combos);
   }
@@ -1951,7 +1951,7 @@ function updateSheetPayout() {
       unit = firstKey ? (bets[firstKey] || 100) : 100;
     }
   } else {
-    unit = parseInt(document.getElementById('e-unit').value) || 100;
+    unit = parseInt(document.getElementById('e-unit').value) || 0;
   }
   document.getElementById('e-payout').value = odds ? Math.floor(Math.round(odds * unit * 10) / 10) : '';
 }
@@ -1968,7 +1968,7 @@ function openSheet(idx) {
   // 金額モードを復元
   const hasIndividual = e.individualBets && Object.keys(e.individualBets).length > 0;
   setSheetBetMode(hasIndividual ? 'individual' : 'uniform');
-  document.getElementById('e-unit').value = e.unitBet || 100;
+  document.getElementById('e-unit').value = (e.unitBet != null) ? e.unitBet : 100;
   document.getElementById('e-result').value = e.result || '';
   document.getElementById('e-odds').value = e.odds || '';
   document.getElementById('e-payout').value = e.payout || '';
@@ -2017,7 +2017,7 @@ function closeSheet() {
 function sheetSave() {
   if (editingIdx < 0) return;
   const combos = getSheetCombos();
-  const unit = sheetBetMode === 'uniform' ? (parseInt(document.getElementById('e-unit').value) || 100) : 100;
+  const unit = sheetBetMode === 'uniform' ? (parseInt(document.getElementById('e-unit').value) || 0) : 0;
   const totalBet = sheetBetMode === 'uniform' ? unit * combos.length : getSheetIndividualTotal();
   const individualBets = sheetBetMode === 'individual' ? getSheetIndividualBets() : null;
   const resultStr = document.getElementById('e-result').value.trim();

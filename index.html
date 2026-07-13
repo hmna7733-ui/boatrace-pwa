@@ -74,15 +74,26 @@ function handleAuthChange(user){
   }
 }
 
-function queueCloudPush(){
+function queueCloudPush(immediate=false){
   if(!currentUser) return;
   clearTimeout(cloudPushTimer);
-  cloudPushTimer = setTimeout(()=>{
+  const doWrite = () => {
     userDocRef().set({
       entries: JSON.stringify(entries),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(e => console.error(e));
-  }, 1200);
+    }).then(() => {
+      updateAuthBadge();
+    }).catch(e => {
+      console.error('sync error', e);
+      // 失敗時はリトライ
+      setTimeout(() => queueCloudPush(true), 3000);
+    });
+  };
+  if (immediate) {
+    doWrite();
+  } else {
+    cloudPushTimer = setTimeout(doWrite, 600);
+  }
 }
 
 function doLogout(){
@@ -1142,16 +1153,18 @@ function forceUpload(){
   const btn = document.getElementById('force-upload-btn');
   const orig = btn.textContent;
   btn.textContent = '保存中...'; btn.disabled = true;
+  // localStorageも最新に更新してからFirestoreへ
+  localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
   userDocRef().set({
     entries: JSON.stringify(entries),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(()=>{
-    btn.textContent = '✓ 保存済み'; btn.style.background = 'var(--green)';
-    setTimeout(()=>{ btn.textContent = orig; btn.style.background = 'var(--amber)'; btn.disabled = false; }, 2000);
+    btn.textContent = '✓ 完了'; btn.style.background = 'var(--green)';
+    setTimeout(()=>{ btn.textContent = orig; btn.style.background = 'var(--amber)'; btn.disabled = false; }, 2500);
   }).catch(e=>{
     console.error(e);
-    btn.textContent = 'エラー'; btn.style.background = 'var(--red)';
-    setTimeout(()=>{ btn.textContent = orig; btn.style.background = 'var(--amber)'; btn.disabled = false; }, 2000);
+    btn.textContent = '再試行'; btn.style.background = 'var(--red)';
+    setTimeout(()=>{ forceUpload(); }, 2000); // エラー時は自動リトライ
   });
 }
 
@@ -1610,7 +1623,9 @@ function addEntry() {
     strategyMemo: f('strategy-memo'),
     memo: f('memo-input'), status
   });
-  save(); clearForm(); updateHeader(); toast('保存しました');
+  localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
+  clearForm(); updateHeader(); toast('保存しました ✓');
+  queueCloudPush(true); // 新規保存後は即時同期
 }
 
 function clearForm() {
@@ -2002,7 +2017,9 @@ function sheetSave() {
     strategyMemo: document.getElementById('e-strategy-memo').value,
     memo: document.getElementById('e-memo').value, status
   };
-  save(); closeSheet(); renderList(); renderChart(); updateHeader(); toast('更新しました');
+  localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
+  closeSheet(); renderList(); renderChart(); updateHeader(); toast('更新しました ✓');
+  queueCloudPush(true); // 編集後は即時同期
 }
 
 function sheetDelete() {

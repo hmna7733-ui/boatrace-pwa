@@ -67,7 +67,8 @@ function handleAuthChange(user){
         // リモートのデータで上書き（他デバイスの変更を反映）
         entries = remote;
         localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
-        renderList(); renderChart(); updateHeader();
+        renderList(); updateHeader();
+        if(document.getElementById('page-analysis').classList.contains('active')) renderChart();
         if(document.getElementById('page-analysis').classList.contains('active')) renderAnalysis();
       } else {
         // ドキュメントがなければローカルをアップロード
@@ -892,23 +893,6 @@ input.miss { border-color: var(--red) !important; }
 
     <!-- PAGE: LIST -->
     <div class="page" id="page-list">
-      <div class="metric-row">
-        <div class="metric">
-          <div class="metric-label">総収支</div>
-          <div class="metric-val sm" id="ls-profit">¥0</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">回収率</div>
-          <div class="metric-val sm" id="ls-roi">0%</div>
-        </div>
-      </div>
-
-      <div class="card" style="padding:12px 14px 10px">
-        <div class="chart-wrap">
-          <canvas id="profitChart" role="img" aria-label="累積収支グラフ">累積収支の推移</canvas>
-        </div>
-      </div>
-
       <div class="date-filter-row">
         <div class="date-input-wrap">
           <input type="date" id="filter-date" onchange="applyDateFilter()" placeholder="日付で絞り込み">
@@ -931,6 +915,32 @@ input.miss { border-color: var(--red) !important; }
 
     <!-- PAGE: ANALYSIS -->
     <div class="page" id="page-analysis">
+      <div class="metric-row">
+        <div class="metric">
+          <div class="metric-label">総収支</div>
+          <div class="metric-val sm" id="ls-profit">¥0</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">回収率</div>
+          <div class="metric-val sm" id="ls-roi">0%</div>
+        </div>
+      </div>
+
+      <!-- グラフフィルター -->
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <div id="gcf-all"   class="filter-chip active" onclick="setChartFilter('all')">全期間</div>
+        <div id="gcf-month" class="filter-chip" onclick="setChartFilter('month')">月別選択</div>
+        <div id="gcf-day"   class="filter-chip" onclick="setChartFilter('day')">日別選択</div>
+      </div>
+      <div id="chart-filter-select" style="display:none;margin-bottom:8px">
+        <select id="chart-filter-value" onchange="renderChart()" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);color:var(--text);font-size:14px;font-family:inherit"></select>
+      </div>
+      <div class="card" style="padding:12px 14px 10px">
+        <div class="chart-wrap">
+          <canvas id="profitChart" role="img" aria-label="累積収支グラフ">累積収支の推移</canvas>
+        </div>
+      </div>
+
       <div class="metric-row">
         <div class="metric"><div class="metric-label">総投資</div><div class="metric-val sm neu" id="an-invest">¥0</div></div>
         <div class="metric"><div class="metric-label">総回収</div><div class="metric-val sm pos" id="an-return">¥0</div></div>
@@ -1266,7 +1276,8 @@ function showPage(name) {
   document.getElementById('page-' + name).classList.add('active');
   document.getElementById('nav-' + name).classList.add('active');
   document.getElementById('scroll-area').scrollTop = 0;
-  if (name === 'list') { renderList(); renderChart(); }
+  if (name === 'list') { renderList(); }
+  if (name === 'analysis') { renderAnalysis(); renderChart(); }
   if (name === 'analysis') { renderAnalysis(); }
 }
 
@@ -1777,10 +1788,10 @@ function executeDel() {
   document.getElementById('del-confirm').classList.remove('open');
   if (pendingDelType === 'list' && pendingDelIdx >= 0) {
     entries.splice(pendingDelIdx, 1);
-    save(); renderList(); renderChart(); updateHeader(); toast('削除しました');
+    save(); renderList(); updateHeader(); toast('削除しました');
   } else if (pendingDelType === 'sheet' && pendingDelIdx >= 0) {
     entries.splice(pendingDelIdx, 1);
-    save(); closeSheet(); renderList(); renderChart(); updateHeader(); toast('削除しました');
+    save(); closeSheet(); renderList(); updateHeader(); toast('削除しました');
   } else if (pendingDelType === 'all') {
     entries = []; save(); renderAnalysis(); updateHeader(); toast('全データを削除しました');
   }
@@ -2038,7 +2049,7 @@ function sheetSave() {
     memo: document.getElementById('e-memo').value, status
   };
   localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
-  closeSheet(); renderList(); renderChart(); updateHeader(); toast('更新しました ✓');
+  closeSheet(); renderList(); updateHeader(); toast('更新しました ✓');
   queueCloudPush(true); // 編集後は即時同期
 }
 
@@ -2052,16 +2063,56 @@ function sheetDelete() {
 }
 
 // Chart
+let chartFilterMode = 'all';
+
+function setChartFilter(mode) {
+  chartFilterMode = mode;
+  ['all','month','day'].forEach(m => {
+    document.getElementById('gcf-'+m).classList.toggle('active', m===mode);
+  });
+  const sel = document.getElementById('chart-filter-select');
+  const selVal = document.getElementById('chart-filter-value');
+  if (mode === 'all') {
+    sel.style.display = 'none';
+    renderChart();
+  } else {
+    sel.style.display = '';
+    // optionsを生成
+    const keys = new Set();
+    entries.forEach(e => {
+      if (!e.date) return;
+      if (mode === 'month') keys.add(e.date.substring(0,7));
+      if (mode === 'day')   keys.add(e.date);
+    });
+    const sorted = [...keys].sort().reverse();
+    selVal.innerHTML = sorted.map(k => `<option value="${k}">${k}</option>`).join('');
+    renderChart();
+  }
+}
+
 function renderChart() {
-  const ctx = document.getElementById('profitChart').getContext('2d');
-  const sorted = [...entries].reverse();
+  const canvas = document.getElementById('profitChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // フィルター適用
+  let filtered = [...entries].reverse();
+  if (chartFilterMode === 'month') {
+    const val = document.getElementById('chart-filter-value')?.value;
+    if (val) filtered = filtered.filter(e => e.date && e.date.startsWith(val));
+  } else if (chartFilterMode === 'day') {
+    const val = document.getElementById('chart-filter-value')?.value;
+    if (val) filtered = filtered.filter(e => e.date === val);
+  }
+
   let cum = 0;
-  const data = sorted.map(e => {
+  const data = filtered.map(e => {
     if (e.status==='win') cum += (e.payout - e.totalBet);
     else if (e.status==='lose') cum -= e.totalBet;
     return cum;
   });
-  const labels = sorted.map(e => e.venue + e.race);
+  const labels = filtered.map(e => (e.venue||'') + (e.race||'') + 'R');
+
   if (profitChart) { profitChart.destroy(); profitChart = null; }
   if (!data.length) return;
   const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -2069,7 +2120,7 @@ function renderChart() {
     type: 'line',
     data: { labels, datasets: [{
       data, borderColor: '#1D9E75', backgroundColor: 'rgba(29,158,117,.12)',
-      fill: true, tension: 0.35, pointRadius: 3,
+      fill: true, tension: 0.35, pointRadius: data.length > 30 ? 0 : 3,
       pointBackgroundColor: data.map(v => v>=0 ? '#1D9E75' : '#E24B4A')
     }]},
     options: {
@@ -2077,7 +2128,7 @@ function renderChart() {
       plugins: { legend: { display: false } },
       scales: {
         y: { grid: { color: dark?'rgba(255,255,255,.06)':'rgba(0,0,0,.06)' }, ticks: { font:{size:10}, callback: v=>(v>=0?'+':'')+v.toLocaleString()+'円', color: dark?'#8fa88a':'#888' } },
-        x: { grid: { display:false }, ticks: { font:{size:9}, maxRotation:45, color: dark?'#8fa88a':'#888' } }
+        x: { grid: { display:false }, ticks: { font:{size:9}, maxRotation:45, color: dark?'#8fa88a':'#888', maxTicksLimit: 12 } }
       }
     }
   });
@@ -2099,7 +2150,7 @@ function renderAnalysis() {
 
   const vm={};
   entries.forEach(e=>{if(!vm[e.venue])vm[e.venue]={i:0,r:0,n:0};vm[e.venue].i+=e.totalBet;if(e.status==='win')vm[e.venue].r+=e.payout;vm[e.venue].n++;});
-  document.getElementById('venue-stats').innerHTML = Object.entries(vm).sort((a,b)=>(b[1].r-b[1].i)-(a[1].r-a[1].i)).slice(0,8).map(([v,s])=>{
+  document.getElementById('venue-stats').innerHTML = Object.entries(vm).sort((a,b)=>(b[1].r-b[1].i)-(a[1].r-a[1].i)).map(([v,s])=>{
     const p=s.r-s.i; const c=p>=0?'var(--green)':'var(--red)';
     return `<div class="stat-row" style="cursor:pointer" onclick="openAnalysisFilter('venue','${v}')">
       <div><div style="font-size:13px;font-weight:700">${v}（${s.n}R）</div></div>

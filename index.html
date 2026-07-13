@@ -1691,7 +1691,7 @@ function renderList() {
               <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
                 ${e.result ? `<div style="border:1.5px solid var(--border);border-radius:8px;padding:3px 10px;text-align:center;background:var(--surface2)">
                   <div style="font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.05em;margin-bottom:1px">確定着順</div>
-                  <div style="font-size:18px;font-weight:900;letter-spacing:2px;color:var(--text);font-family:'Courier New',monospace">${e.result}</div>
+                  <div style="font-size:18px;font-weight:900;letter-spacing:2px;color:var(--text);font-family:'Courier New',monospace">${e.result.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/[ー－―]/g,'-')}</div>
                 </div>` : ''}
                 <span class="tag ${e.status}">${e.status==='win'?'的中':e.status==='lose'?'外れ':'未入力'}</span>
               </div>

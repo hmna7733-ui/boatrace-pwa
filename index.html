@@ -46,23 +46,39 @@ function initFirebase(){
   } catch(e) { console.error('Firebase init error', e); }
 }
 
+let _unsubscribeSnapshot = null;
+let _isUploading = false; // 自分のアップロード中フラグ
+
 function handleAuthChange(user){
+  // 既存のsnapshotリスナーを解除
+  if (_unsubscribeSnapshot) { _unsubscribeSnapshot(); _unsubscribeSnapshot = null; }
+
   if(user){
     currentUser = user;
     localStorage.removeItem(SKIP_KEY);
     showApp();
     updateAuthBadge();
-    userDocRef().get().then(doc=>{
-      if(doc.exists){
+
+    // onSnapshotでリアルタイム受信
+    _unsubscribeSnapshot = userDocRef().onSnapshot(doc => {
+      if (_isUploading) return; // 自分の書き込みによるイベントは無視
+      if (doc.exists) {
         const remote = JSON.parse(doc.data().entries || '[]');
-        entries = mergeEntries(entries, remote);
+        // リモートのデータで上書き（他デバイスの変更を反映）
+        entries = remote;
         localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
+        renderList(); renderChart(); updateHeader();
+        if(document.getElementById('page-analysis').classList.contains('active')) renderAnalysis();
       } else {
-        queueCloudPush();
+        // ドキュメントがなければローカルをアップロード
+        _isUploading = true;
+        userDocRef().set({
+          entries: JSON.stringify(entries),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).finally(() => { _isUploading = false; });
       }
-      renderList(); renderChart(); updateHeader();
-      if(document.getElementById('page-analysis').classList.contains('active')) renderAnalysis();
-    }).catch(e => console.error(e));
+    }, e => console.error('snapshot error', e));
+
   } else {
     currentUser = null;
     updateAuthBadge();
@@ -78,14 +94,15 @@ function queueCloudPush(immediate=false){
   if(!currentUser) return;
   clearTimeout(cloudPushTimer);
   const doWrite = () => {
+    _isUploading = true;
     userDocRef().set({
       entries: JSON.stringify(entries),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }).then(() => {
-      updateAuthBadge();
+      setTimeout(() => { _isUploading = false; }, 2000);
     }).catch(e => {
       console.error('sync error', e);
-      // 失敗時はリトライ
+      _isUploading = false;
       setTimeout(() => queueCloudPush(true), 3000);
     });
   };
@@ -1153,18 +1170,21 @@ function forceUpload(){
   const btn = document.getElementById('force-upload-btn');
   const orig = btn.textContent;
   btn.textContent = '保存中...'; btn.disabled = true;
-  // localStorageも最新に更新してからFirestoreへ
   localStorage.setItem('boat_pwa_v1', JSON.stringify(entries));
+  _isUploading = true;
   userDocRef().set({
     entries: JSON.stringify(entries),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(()=>{
     btn.textContent = '✓ 完了'; btn.style.background = 'var(--green)';
+    // 書き込み完了後、少し待ってからフラグ解除（snapshotイベントが来るのを待つ）
+    setTimeout(()=>{ _isUploading = false; }, 2000);
     setTimeout(()=>{ btn.textContent = orig; btn.style.background = 'var(--amber)'; btn.disabled = false; }, 2500);
   }).catch(e=>{
     console.error(e);
-    btn.textContent = '再試行'; btn.style.background = 'var(--red)';
-    setTimeout(()=>{ forceUpload(); }, 2000); // エラー時は自動リトライ
+    _isUploading = false;
+    btn.textContent = 'エラー・再試行'; btn.style.background = 'var(--red)';
+    setTimeout(()=>{ btn.textContent = orig; btn.style.background = 'var(--amber)'; btn.disabled = false; }, 2000);
   });
 }
 

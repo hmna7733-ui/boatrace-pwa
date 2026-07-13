@@ -2147,7 +2147,7 @@ function renderAnalysis() {
   document.getElementById('an-hitrate').textContent = decided.length ? ((won.length/decided.length)*100).toFixed(1)+'%' : '0%';
   document.getElementById('an-avgodds').textContent = won.length ? (won.reduce((a,e)=>a+e.odds,0)/won.length).toFixed(1)+'倍' : '-';
   document.getElementById('an-maxwin').textContent = won.length ? '¥'+Math.max(...won.map(e=>e.payout)).toLocaleString() : '¥0';
-  let streak=0; for(const e of entries){if(e.status==='lose')streak++;else break;}
+  let streak=0; for(const e of entries){if(e.status==='lose'||e.status==='pending')streak++;else break;}
   document.getElementById('an-streak').textContent = streak+'連敗';
 
   const vm={};

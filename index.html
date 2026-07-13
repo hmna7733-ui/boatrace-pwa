@@ -1760,7 +1760,11 @@ function renderList() {
     el.innerHTML = sortedDates.map(date => {
       const dayEntries = grouped[date];
       const dayInvest = dayEntries.reduce((a,e)=>a+e.totalBet,0);
-      const dayRet = dayEntries.filter(e=>e.status==='win').reduce((a,e)=>a+e.payout,0);
+      const dayRet = dayEntries.reduce((a,e) => {
+        if (e.status==='win') return a + e.payout;
+        if (e.refundAmt) return a + e.refundAmt;
+        return a;
+      }, 0);
       const dayProfit = dayRet - dayInvest;
       const dayWin = dayEntries.filter(e=>e.status==='win').length;
       const dayDecided = dayEntries.filter(e=>e.status!=='pending').length;
@@ -1809,7 +1813,11 @@ function renderList() {
     }).join('');
   }
   const invest = entries.reduce((a,e)=>a+e.totalBet,0);
-  const ret = entries.filter(e=>e.status==='win').reduce((a,e)=>a+e.payout,0);
+  const ret = entries.reduce((a,e) => {
+    if (e.status==='win') return a + e.payout;
+    if (e.refundAmt) return a + e.refundAmt;
+    return a;
+  }, 0);
   const profit = ret - invest;
   const roi = invest ? (ret/invest*100).toFixed(1) : 0;
   const pe = document.getElementById('ls-profit');
@@ -2093,7 +2101,7 @@ function sheetSave() {
       payout = Math.floor(Math.round(odds * hitUnit * 10) / 10);
     }
   }
-  if (!resultStr && eRefundAmt) status = 'lose';
+  if (!resultStr && eRefundAmt) status = 'lose'; // 返還のみはlose
   payout += eRefundAmt;
   const formation = getSheetSel('e-f1').join('') + '→' + getSheetSel('e-f2').join('') + '→' + getSheetSel('e-f3').join('');
   entries[editingIdx] = {
@@ -2170,7 +2178,7 @@ function renderChart() {
   let cum = 0;
   const data = filtered.map(e => {
     if (e.status==='win') cum += (e.payout - e.totalBet);
-    else if (e.status==='lose') cum -= e.totalBet;
+    else if (e.status==='lose') cum -= (e.totalBet - (e.refundAmt || 0));
     return cum;
   });
   const labels = filtered.map(e => (e.venue||'') + (e.race||'') + 'R');
@@ -2201,17 +2209,21 @@ function renderAnalysis() {
   const won = entries.filter(e=>e.status==='win');
   const decided = entries.filter(e=>e.status!=='pending');
   const invest = entries.reduce((a,e)=>a+e.totalBet,0);
-  const ret = won.reduce((a,e)=>a+e.payout,0);
+  const ret = entries.reduce((a,e) => {
+    if (e.status==='win') return a + e.payout;
+    if (e.refundAmt) return a + e.refundAmt;
+    return a;
+  }, 0);
   document.getElementById('an-invest').textContent = '¥'+invest.toLocaleString();
   document.getElementById('an-return').textContent = '¥'+ret.toLocaleString();
   document.getElementById('an-hitrate').textContent = decided.length ? ((won.length/decided.length)*100).toFixed(1)+'%' : '0%';
   document.getElementById('an-avgodds').textContent = won.length ? (won.reduce((a,e)=>a+e.odds,0)/won.length).toFixed(1)+'倍' : '-';
   document.getElementById('an-maxwin').textContent = won.length ? '¥'+Math.max(...won.map(e=>e.payout)).toLocaleString() : '¥0';
-  let streak=0; for(const e of entries){if(e.status==='lose'||e.status==='pending')streak++;else break;}
+  let streak=0; for(const e of entries){if(e.status==='win')break;if(e.status==='pending')streak++;else if(e.status==='lose'&&!e.refundAmt)streak++;else break;}  
   document.getElementById('an-streak').textContent = streak+'連敗';
 
   const vm={};
-  entries.forEach(e=>{if(!vm[e.venue])vm[e.venue]={i:0,r:0,n:0};vm[e.venue].i+=e.totalBet;if(e.status==='win')vm[e.venue].r+=e.payout;vm[e.venue].n++;});
+  entries.forEach(e=>{if(!vm[e.venue])vm[e.venue]={i:0,r:0,n:0};vm[e.venue].i+=e.totalBet;if(e.status==='win')vm[e.venue].r+=e.payout;else if(e.refundAmt)vm[e.venue].r+=e.refundAmt;vm[e.venue].n++;});
   document.getElementById('venue-stats').innerHTML = Object.entries(vm).sort((a,b)=>(b[1].r-b[1].i)-(a[1].r-a[1].i)).map(([v,s])=>{
     const p=s.r-s.i; const c=p>=0?'var(--green)':'var(--red)';
     return `<div class="stat-row" style="cursor:pointer" onclick="openAnalysisFilter('venue','${v}')">
@@ -2224,7 +2236,7 @@ function renderAnalysis() {
   }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
 
   const tm={};
-  entries.forEach(e=>{if(!tm[e.ticketType])tm[e.ticketType]={i:0,r:0,n:0};tm[e.ticketType].i+=e.totalBet;if(e.status==='win')tm[e.ticketType].r+=e.payout;tm[e.ticketType].n++;});
+  entries.forEach(e=>{if(!tm[e.ticketType])tm[e.ticketType]={i:0,r:0,n:0};tm[e.ticketType].i+=e.totalBet;if(e.status==='win')tm[e.ticketType].r+=e.payout;else if(e.refundAmt)tm[e.ticketType].r+=e.refundAmt;tm[e.ticketType].n++;});
   document.getElementById('ticket-stats').innerHTML = Object.entries(tm).map(([t,s])=>{
     const roi=s.i?(s.r/s.i*100).toFixed(0)+'%':'-%';
     return `<div class="stat-row" style="cursor:pointer" onclick="openAnalysisFilter('ticket','${t}')">
@@ -2237,7 +2249,7 @@ function renderAnalysis() {
   }).join('') || '<div style="color:var(--text3);font-size:13px;padding:4px 0">データなし</div>';
 
   const mm={};
-  entries.forEach(e=>{const m=e.date?e.date.substring(0,7):'不明';if(!mm[m])mm[m]={i:0,r:0};mm[m].i+=e.totalBet;if(e.status==='win')mm[m].r+=e.payout;});
+  entries.forEach(e=>{const m=e.date?e.date.substring(0,7):'不明';if(!mm[m])mm[m]={i:0,r:0};mm[m].i+=e.totalBet;if(e.status==='win')mm[m].r+=e.payout;else if(e.refundAmt)mm[m].r+=e.refundAmt;});
   document.getElementById('monthly-stats').innerHTML = Object.entries(mm).sort().reverse().slice(0,6).map(([m,s])=>{
     const p=s.r-s.i; const c=p>=0?'var(--green)':'var(--red)';
     return `<div class="stat-row" style="cursor:pointer" onclick="openAnalysisFilter('month','${m}')">
@@ -2255,7 +2267,7 @@ function renderAnalysis() {
     const d = e.date || '不明';
     if (!dm[d]) dm[d] = {i:0,r:0,n:0,win:0};
     dm[d].i += e.totalBet;
-    if (e.status==='win') { dm[d].r += e.payout; dm[d].win++; }
+    if (e.status==='win') { dm[d].r += e.payout; dm[d].win++; } else if (e.refundAmt) dm[d].r += e.refundAmt;
     if (e.status!=='pending') dm[d].n++;
   });
   const sortedDays = Object.keys(dm).sort((a,b)=>normalizeDate(b).localeCompare(normalizeDate(a)));
@@ -2301,7 +2313,7 @@ function renderAnalysis() {
     const k = e.buykata || '未設定';
     if (!bkm[k]) bkm[k] = {i:0,r:0,n:0,win:0};
     bkm[k].i += e.totalBet;
-    if (e.status==='win') { bkm[k].r += e.payout; bkm[k].win++; }
+    if (e.status==='win') { bkm[k].r += e.payout; bkm[k].win++; } else if (e.refundAmt) bkm[k].r += e.refundAmt;
     if (e.status!=='pending') bkm[k].n++;
   });
   const maxRoi = Math.max(1, ...Object.values(bkm).map(s=>s.i?s.r/s.i*100:0));

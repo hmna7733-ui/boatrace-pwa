@@ -2084,7 +2084,9 @@ function setChartFilter(mode) {
       if (mode === 'month') keys.add(e.date.substring(0,7));
       if (mode === 'day')   keys.add(e.date);
     });
-    const sorted = [...keys].sort().reverse();
+    // 日付をゼロパディングしてソート（2026/7/9 → 2026/07/09）
+    const padDate = s => s.replace(/(\d+)/g, n => n.padStart(2,'0'));
+    const sorted = [...keys].sort((a,b) => padDate(b).localeCompare(padDate(a)));
     selVal.innerHTML = sorted.map(k => `<option value="${k}">${k}</option>`).join('');
     renderChart();
   }
